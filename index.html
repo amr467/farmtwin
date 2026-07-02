@@ -771,19 +771,14 @@ function drawTreeGrid(svg,zone,pxPts,col){
   const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
 
   // Determine which end of each lateral is "uphill" (where sub-main connects).
-  // The sub-main should run up the steepest ascent direction (opposite of aspect).
-  // We project the aspect direction onto screen coordinates.
-  let smConnectAtStart=true; // default: sub-main at the start of each row (as sorted)
+  // Uphill end = whichever lateral endpoint projects further in the uphill direction.
+  // Uphill direction in screen space = aspect (downhill) + 180°.
   let aspectScreenRad=null;
+  let uphillX=0,uphillY=-1; // default: uphill = north (screen up)
   if(aspectDeg!==null&&slopePct>1){
-    // Aspect = downhill direction. Uphill = aspect + 180.
-    // Convert uphill geographic bearing to screen angle:
-    // bearing 0=N=screen up=-90° from +X; bearing 90=E=screen right=0°
     const uphillDeg=(aspectDeg+180)%360;
     aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
-    // Dot product of uphill direction with row direction tells us which row end is uphill
-    const uphillX=Math.cos(aspectScreenRad),uphillY=Math.sin(aspectScreenRad);
-    smConnectAtStart=(uphillX*rux+uphillY*ruy)<0; // uphill is at row end or start
+    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
   }
 
   // Build lateral endpoints for each row
@@ -804,8 +799,11 @@ function drawTreeGrid(svg,zone,pxPts,col){
     // Clamp to polygon
     const s=ptInPolyPx(extStart,pxPts)?extStart:start;
     const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
-    // Sub-main connects at the "uphill" end of this lateral
-    const smEnd=smConnectAtStart?s:e;
+    // Sub-main connects at the UPHILL end of this lateral.
+    // Compare which endpoint (s or e) projects further in the uphill direction.
+    const sProjUp=s.x*uphillX+s.y*uphillY;
+    const eProjUp=e.x*uphillX+e.y*uphillY;
+    const smEnd=sProjUp>eProjUp?s:e; // whichever is more uphill
     const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
     const proj=midX*pux+midY*puy;
     if(proj<minRowProj)minRowProj=proj;
@@ -899,12 +897,14 @@ function drawTreeGrid(svg,zone,pxPts,col){
 
   // ── Elevation query button (if no slope data yet) ────────────────────
   if(zone._slope==null&&!zone._elevQuerying){
+    const msg=zone._elevError||'Click to fetch slope data';
+    const col=zone._elevError?'#f87171':'#60a5fa';
     const btn=document.createElementNS('http://www.w3.org/2000/svg','text');
     btn.setAttribute('x',cx);btn.setAttribute('y',cy+14);
-    btn.setAttribute('text-anchor','middle');btn.setAttribute('fill','#60a5fa');
+    btn.setAttribute('text-anchor','middle');btn.setAttribute('fill',col);
     btn.setAttribute('font-size','9');btn.setAttribute('font-family','-apple-system,sans-serif');
-    btn.setAttribute('cursor','pointer');btn.setAttribute('opacity','0.85');
-    btn.textContent='⊕ Click to fetch slope data';
+    btn.setAttribute('cursor','pointer');btn.setAttribute('opacity','0.9');
+    btn.textContent=zone._elevError?`⚠ ${msg} — click to retry`:`⊕ ${msg}`;
     btn.addEventListener('click',e=>{e.stopPropagation();fetchZoneElevation(zone);});
     svg.appendChild(btn);
   } else if(zone._elevQuerying){
@@ -1192,72 +1192,67 @@ window.compassDir=compassDir;
 // computes slope % and aspect direction.
 async function fetchZoneElevation(zone){
   if(!zone||zone._elevQuerying)return;
-  window.fetchZoneElevation=fetchZoneElevation;
   zone._elevQuerying=true;
-  redraw(); // show "Fetching…" label
+  zone._elevError=null;
+  redraw();
 
   try{
-    // Sample a grid of up to 30 points inside the polygon
     const poly=zone.polygon;
     const latMin=Math.min(...poly.map(p=>p[0])),latMax=Math.max(...poly.map(p=>p[0]));
     const lngMin=Math.min(...poly.map(p=>p[1])),lngMax=Math.max(...poly.map(p=>p[1]));
-    const gridN=6; // 6×6 = up to 36 points, API limit is 100
+    const gridN=5; // 5×5 = 25 points max
     const pts=[];
+    // Always include polygon corners
+    poly.forEach(p=>pts.push([p[0],p[1]]));
+    // Add interior grid points
     for(let i=0;i<=gridN;i++){
       for(let j=0;j<=gridN;j++){
         const lat=latMin+(latMax-latMin)*i/gridN;
         const lng=lngMin+(lngMax-lngMin)*j/gridN;
-        // Only include points inside the polygon
         if(ptInPolyLL([lat,lng],poly))pts.push([lat,lng]);
       }
     }
-    if(pts.length<4){zone._elevQuerying=false;redraw();return;}
+    // Deduplicate and limit to 100
+    const uniq=pts.slice(0,99);
+    if(uniq.length<3){
+      zone._elevQuerying=false;
+      zone._elevError='Zone too small for elevation query';
+      redraw();return;
+    }
 
-    // Open-Topo-Data SRTM 30m endpoint
-    const locations=pts.map(p=>`${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('|');
+    const locations=uniq.map(p=>`${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('|');
     const url=`https://api.opentopodata.org/v1/srtm30m?locations=${locations}`;
-    const res=await fetch(url);
-    if(!res.ok)throw new Error('API error '+res.status);
+    const res=await fetch(url,{headers:{'Accept':'application/json'}});
+    if(res.status===429){throw new Error('Rate limited — wait 1 minute and try again');}
+    if(!res.ok){throw new Error('API returned '+res.status);}
     const data=await res.json();
-    if(data.status!=='OK')throw new Error('API status: '+data.status);
+    if(data.status!=='OK'){throw new Error('API: '+data.status+(data.error?' — '+data.error:''));}
 
-    const elevPts=data.results.map((r,i)=>({
-      lat:pts[i][0],lng:pts[i][1],elev:r.elevation
-    })).filter(p=>p.elev!=null);
-    if(elevPts.length<4)throw new Error('Not enough elevation points');
+    const elevPts=data.results
+      .map((r,i)=>({lat:uniq[i][0],lng:uniq[i][1],elev:r.elevation}))
+      .filter(p=>p.elev!=null&&!isNaN(p.elev));
+    if(elevPts.length<3){throw new Error('Not enough valid elevation points returned');}
 
-    // Fit a plane z = a*lat + b*lng + c using least squares
-    // This gives us the slope direction and magnitude
+    // Fit plane z = a*lat + b*lng + c (least squares)
     const n=elevPts.length;
-    let sumLat=0,sumLng=0,sumElev=0,sumLat2=0,sumLng2=0,sumLatLng=0,sumLatElev=0,sumLngElev=0;
+    let sLat=0,sLng=0,sE=0,sLat2=0,sLng2=0,sLatLng=0,sLatE=0,sLngE=0;
     elevPts.forEach(p=>{
-      sumLat+=p.lat;sumLng+=p.lng;sumElev+=p.elev;
-      sumLat2+=p.lat*p.lat;sumLng2+=p.lng*p.lng;
-      sumLatLng+=p.lat*p.lng;
-      sumLatElev+=p.lat*p.elev;sumLngElev+=p.lng*p.elev;
+      sLat+=p.lat;sLng+=p.lng;sE+=p.elev;
+      sLat2+=p.lat**2;sLng2+=p.lng**2;sLatLng+=p.lat*p.lng;
+      sLatE+=p.lat*p.elev;sLngE+=p.lng*p.elev;
     });
-    // Solve 3×3 system for [a, b, c] — plane coefficients
-    // Using Cramer's rule approximation (good enough for small areas)
-    const A=[[sumLat2,sumLatLng,sumLat],[sumLatLng,sumLng2,sumLng],[sumLat,sumLng,n]];
-    const B=[sumLatElev,sumLngElev,sumElev];
+    const A=[[sLat2,sLatLng,sLat],[sLatLng,sLng2,sLng],[sLat,sLng,n]];
+    const B=[sLatE,sLngE,sE];
     const coeffs=solveLinear3(A,B);
-    if(!coeffs){zone._elevQuerying=false;redraw();return;}
-    const [a,b]=coeffs; // dElev/dLat, dElev/dLng
+    if(!coeffs){throw new Error('Could not fit slope plane to elevation data');}
+    const [a,b]=coeffs;
 
-    // Convert gradient to slope % and aspect direction
-    // a = dE/dLat: metres of elevation per degree latitude ≈ per 111320m
-    // b = dE/dLng: metres per degree longitude ≈ per 111320*cos(lat) m
     const cosLat=Math.cos((latMin+latMax)/2*Math.PI/180);
-    const dzdx=b/(111320*cosLat); // elev change per horizontal metre (E direction)
-    const dzdy=a/111320;           // elev change per horizontal metre (N direction)
-    const slopeRad=Math.atan(Math.sqrt(dzdx*dzdx+dzdy*dzdy));
-    const slopePct=Math.tan(slopeRad)*100;
-    // Aspect: direction of steepest descent (downhill), measured from North
-    // dzdy positive = slope goes up to N; dzdx positive = slope goes up to E
-    // Downhill direction is opposite of gradient
-    const aspectRad=Math.atan2(-dzdx,-dzdy); // downhill, from +Y (North)
+    const dzdx=b/(111320*cosLat);
+    const dzdy=a/111320;
+    const slopePct=Math.sqrt(dzdx**2+dzdy**2)*100;
+    const aspectRad=Math.atan2(-dzdx,-dzdy);
     const aspectDeg=(aspectRad*180/Math.PI+360)%360;
-
     const elevArr=elevPts.map(p=>p.elev);
     const elevRange=Math.max(...elevArr)-Math.min(...elevArr);
 
@@ -1265,17 +1260,20 @@ async function fetchZoneElevation(zone){
     zone._aspect=Math.round(aspectDeg);
     zone._elevRange=Math.round(elevRange*10)/10;
     zone._elevQuerying=false;
-
-    // Persist slope data to Firebase so we don't re-query
+    zone._elevError=null;
     pushToFB();
     redraw();
+    // Refresh card if open
+    if(selZone?.id===zone.id)showZoneCard(zone);
   }catch(err){
     console.warn('Elevation query failed:',err.message);
-    zone._slope=null;
     zone._elevQuerying=false;
+    zone._elevError=err.message;
     redraw();
+    if(selZone?.id===zone.id)showZoneCard(zone);
   }
 }
+window.fetchZoneElevation=fetchZoneElevation;
 
 function ptInPolyLL(pt,polygon){
   // Ray-casting in lat/lng space
@@ -1583,7 +1581,7 @@ function finishZone(){
   const isTank=pendingZoneType==='tank';
   const zone={id:'z'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
     label:(isTank?'Tank ':'Zone ')+zc++,polygon:[...drawPts],
-    rowSpacingM:7,treeSpacingM:7,emitters:2,lhrPerEmitter:4,rowAngleDeg:15,pricePerTree:0,
+    rowSpacingM:7,treeSpacingM:7,emitters:2,lhrPerEmitter:4,rowAngleDeg:15,pricePerTree:0,subMainDia:'1.5',
     color:isTank?'#fb923c':ZONE_COLS[zones.filter(z=>z.type!=='tank').length%ZONE_COLS.length],
     type:isTank?'tank':'zone',
     ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{})};
@@ -1809,17 +1807,24 @@ function showZoneCard(zone){
       <option value="-15"${(zone.rowAngleDeg??15)===-15?' selected':''}>15° CW — NNE</option>
       <option value="-45"${(zone.rowAngleDeg??15)===-45?' selected':''}>45° CW — NE-SW diagonal</option>
     </select></div>
+    <div class="pc-r"><label>Sub-main dia</label>
+    <select id="pc-smd">
+      <option value="1.5"${(zone.subMainDia||'1.5')==='1.5'?' selected':''}>1½″ — standard</option>
+      <option value="2"${(zone.subMainDia||'1.5')==='2'?' selected':''}>2″ — long runs / high flow</option>
+    </select></div>
     <div class="pc-r"><label>Row spacing (m)<br><span style="color:var(--tx3);font-size:9px">row-to-row</span></label><input id="pc-rs" type="number" value="${zone.rowSpacingM||7}" min="1" step="0.5"></div>
     <div class="pc-r"><label>Tree spacing (m)<br><span style="color:var(--tx3);font-size:9px">within row</span></label><input id="pc-ts" type="number" value="${zone.treeSpacingM||7}" min="1" step="0.5"></div>
     <div class="pc-r"><label>Emitters/tree</label><input id="pc-em" type="number" value="${zone.emitters||2}" min="1" max="8"></div>
     <div class="pc-r"><label>L/hr per emitter</label><input id="pc-lr" type="number" value="${zone.lhrPerEmitter||4}" min="1"></div>
     <div class="pc-r"><label>Price/tree (JD)</label><input id="pc-pt" type="number" value="${zone.pricePerTree||0}" min="0" step="0.5" placeholder="0"></div>
     <div class="pc-hint" id="pc-zc" style="white-space:pre-line">${zoneCalcStr(zone,area,areaDun)}</div>
-    <div style="margin-top:5px;display:flex;gap:5px;align-items:center">
+    <div style="margin-top:5px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
       ${zone._slope!=null
         ?`<span style="font-size:9px;color:${zone._slope>5?'var(--err)':zone._slope>2?'var(--warn)':'var(--ok)'}">⛰ ${zone._slope}% slope ${zone._aspect!=null?'↓'+compassDir(zone._aspect):''} · ${zone._elevRange??'?'}m range</span>`
-        :`<span style="font-size:9px;color:var(--tx3)">No slope data — pipes shown flat</span>`}
-      <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchZoneElevation(zones.find(z=>z.id==='${zone.id}'))">⊕ ${zone._slope!=null?'Re-fetch':'Fetch slope'}</button>
+        :zone._elevError
+          ?`<span style="font-size:9px;color:var(--err)">⚠ ${zone._elevError}</span>`
+          :`<span style="font-size:9px;color:var(--tx3)">No slope data — pipes shown flat</span>`}
+      <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchZoneElevation(zones.find(z=>z.id==='${zone.id}'))">${zone._elevQuerying?'Fetching…':zone._slope!=null?'⊕ Re-fetch':'⊕ Fetch slope'}</button>
     </div>`}
     <div class="pc-hint">${areaDun} dunum · ${area.toFixed(0)}m²</div>
     <div class="pc-btns">
@@ -1828,19 +1833,19 @@ function showZoneCard(zone){
       <button class="pcb" onclick="closeCard()">✕</button>
     </div>`;
   // live update tree calc and wall type toggle
-  ['pc-ra','pc-rs','pc-ts','pc-em','pc-lr','pc-pt'].forEach(id=>{
+  ['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt'].forEach(id=>{
     document.getElementById(id)?.addEventListener('change',refreshZoneCalc);
     document.getElementById(id)?.addEventListener('input',refreshZoneCalc);
   });
   function refreshZoneCalc(){
     zone.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
+    zone.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
     zone.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
     zone.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
     zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
     zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||4;
     zone.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
-    redraw(); // redraws grid, updates zone._treeCount
-    // Use actual count from grid after redraw
+    redraw();
     setTimeout(()=>{
       const el=document.getElementById('pc-zc');
       if(el)el.textContent=zoneCalcStr(zone,area,areaDun);
@@ -1877,7 +1882,7 @@ function zoneCalcStr(zone,area,areaDun){
     const lat=zone._lateralM,sub=zone._subMainM;
     const latStr=lat>999?`${(lat/1000).toFixed(2)}km`:`${lat.toFixed(0)}m`;
     const subStr=sub>999?`${(sub/1000).toFixed(2)}km`:`${sub.toFixed(0)}m`;
-    pipeStr=`\n20mm lateral: ${latStr} · 2″ sub-main: ~${subStr}`
+    pipeStr=`\n20mm lateral: ${latStr} · ${zone.subMainDia||'1.5'}″ sub-main: ~${subStr}`
            +`\nFeeders: ${rows} · Drip emitters: ${emitters.toLocaleString()}`;
   }
   let splitStr='';
@@ -1904,6 +1909,7 @@ window.applyZone=function(id){
     z.maxFlowM3h=parseFloat(document.getElementById('pc-mf')?.value)||5;
   } else {
     z.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
+    z.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
     z.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
     z.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
     z.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
@@ -1985,7 +1991,8 @@ function renderSidebar(){
   const cropZones=zones.filter(z=>z.type!=='tank'&&z._lateralM!=null);
   if(cropZones.length>0){
     const totalLat=cropZones.reduce((a,z)=>a+(z._lateralM||0),0);
-    const totalSub=cropZones.reduce((a,z)=>a+(z._subMainM||0),0);
+    const totalSub15=cropZones.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
+    const totalSub2=cropZones.filter(z=>z.subMainDia==='2').reduce((a,z)=>a+(z._subMainM||0),0);
     const totalTrees=cropZones.reduce((a,z)=>a+(z._treeCount||0),0);
     const totalPrice=cropZones.reduce((a,z)=>a+((z._treeCount||0)*(z.pricePerTree||0)),0);
     const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
@@ -1997,10 +2004,14 @@ function renderSidebar(){
         <td style="padding:3px;font-weight:600">20mm lateral</td>
         <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">${fmtM(totalLat)}</td>
       </tr>
-      <tr style="border-top:1px solid var(--bdr)">
+      ${totalSub15>0?`<tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">1½″ sub-main</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">~${fmtM(totalSub15)}</td>
+      </tr>`:''}
+      ${totalSub2>0?`<tr style="border-top:1px solid var(--bdr)">
         <td style="padding:3px;font-weight:600">2″ sub-main</td>
-        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">~${fmtM(totalSub)}</td>
-      </tr>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">~${fmtM(totalSub2)}</td>
+      </tr>`:''}
       <tr style="border-top:1px solid var(--bdr)">
         <td style="padding:3px;font-weight:600">Feeder tees</td>
         <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">${cropZones.reduce((a,z)=>a+(z._rowCount||0),0)} pcs</td>
@@ -2132,10 +2143,18 @@ function acctAutoQty(item){
   const cz=zones.filter(z=>z.type!=='tank'&&z._treeCount!=null);
   switch(item.autoKey){
     case 'lat20mm': return cz.reduce((a,z)=>a+(z._lateralM||0),0);
-    case 'sub2in':  return cz.reduce((a,z)=>a+(z._subMainM||0),0);
+    case 'sub1.5in': return cz.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
+    case 'sub2in':  return cz.filter(z=>z.subMainDia==='2').reduce((a,z)=>a+(z._subMainM||0),0);
     case 'feeders': return cz.reduce((a,z)=>a+(z._rowCount||0),0);
     case 'emitters':return cz.reduce((a,z)=>a+(z._emitterCount||0),0);
-    default: return item.qty||0;
+    default:
+      if(item.autoKey?.startsWith('mainpipe-')){
+        const dia=item.autoKey.replace('mainpipe-','');
+        const stock=pipes.filter(p=>p.dia===dia&&p.status==='existing'&&!p.isReuse).reduce((a,p)=>a+pipeLenM(p),0);
+        const needed=pipes.filter(p=>p.dia===dia&&p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0);
+        return Math.max(0,needed-stock);
+      }
+      return item.qty||0;
   }
 }
 function acctLineTotal(item){
@@ -2225,13 +2244,18 @@ window.renderAcct=renderAcct;
 function initDefaultAcctItems(){
   acctItems=[
     {id:acctNextId++,label:'20mm drip lateral',unit:'m',autoKey:'lat20mm',unitPrice:0},
+    {id:acctNextId++,label:'1½″ sub-main pipe',unit:'m',autoKey:'sub1.5in',unitPrice:0},
     {id:acctNextId++,label:'2″ sub-main pipe',unit:'m',autoKey:'sub2in',unitPrice:0},
     {id:acctNextId++,label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders',unitPrice:0},
     {id:acctNextId++,label:'Drip emitters',unit:'pcs',autoKey:'emitters',unitPrice:0},
   ];
+  // Main pipes: qty = what to BUY (planned needed minus existing stock)
   ['5','4','3','2'].forEach(dia=>{
-    const tot=pipes.filter(p=>p.dia===dia).reduce((a,p)=>a+pipeLenM(p),0);
-    if(tot>0)acctItems.push({id:acctNextId++,label:`${dia}″ main pipe`,unit:'m',qty:Math.ceil(tot),unitPrice:0});
+    const stock=pipes.filter(p=>p.dia===dia&&p.status==='existing'&&!p.isReuse).reduce((a,p)=>a+pipeLenM(p),0);
+    const needed=pipes.filter(p=>p.dia===dia&&p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0);
+    if(needed>0||stock>0){
+      acctItems.push({id:acctNextId++,label:`${dia}″ main pipe (buy)`,unit:'m',autoKey:`mainpipe-${dia}`,unitPrice:0});
+    }
   });
   pushAcctToFB();
 }
