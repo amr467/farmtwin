@@ -781,8 +781,15 @@ function drawTreeGrid(svg,zone,pxPts,col){
     uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
   }
 
+  // ── Flat vs sloped layout decision ──────────────────────────────────
+  // Flat (slope < 2%): sub-main runs down the CENTER of the zone.
+  //   Each lateral splits into two halves — left and right of sub-main.
+  //   This halves total lateral pipe vs side-entry.
+  // Sloped (slope ≥ 2%): sub-main at the UPHILL end of each lateral.
+  const isFlat=slopePct<2;
+
   // Build lateral endpoints for each row
-  const laterals=[]; // {start, end, length_m, ri}
+  const laterals=[];
   let totalLateralPx=0;
   let minRowProj=Infinity,maxRowProj=-Infinity;
 
@@ -793,22 +800,27 @@ function drawTreeGrid(svg,zone,pxPts,col){
     const spanPx=pts.length>=2?Math.hypot(end.x-start.x,end.y-start.y):0;
     const lateralPx=spanPx+rowStepPx;
     totalLateralPx+=lateralPx;
-    // Extend the lateral by half a step beyond first and last tree
-    const extStart={x:start.x-rux*rowStepPx*0.5, y:start.y-ruy*rowStepPx*0.5};
-    const extEnd  ={x:end.x  +rux*rowStepPx*0.5, y:end.y  +ruy*rowStepPx*0.5};
-    // Clamp to polygon
+    const extStart={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
+    const extEnd  ={x:end.x  +rux*rowStepPx*0.5,y:end.y  +ruy*rowStepPx*0.5};
     const s=ptInPolyPx(extStart,pxPts)?extStart:start;
     const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
-    // Sub-main connects at the UPHILL end of this lateral.
-    // Compare which endpoint (s or e) projects further in the uphill direction.
-    const sProjUp=s.x*uphillX+s.y*uphillY;
-    const eProjUp=e.x*uphillX+e.y*uphillY;
-    const smEnd=sProjUp>eProjUp?s:e; // whichever is more uphill
+
+    let smEnd,smMid=null;
+    if(isFlat){
+      // Flat: sub-main connects at midpoint of each lateral
+      smMid={x:(s.x+e.x)/2,y:(s.y+e.y)/2};
+      smEnd=smMid;
+    } else {
+      // Sloped: sub-main at the uphill end
+      const sProjUp=s.x*uphillX+s.y*uphillY;
+      const eProjUp=e.x*uphillX+e.y*uphillY;
+      smEnd=sProjUp>eProjUp?s:e;
+    }
     const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
     const proj=midX*pux+midY*puy;
     if(proj<minRowProj)minRowProj=proj;
     if(proj>maxRowProj)maxRowProj=proj;
-    laterals.push({s,e,smEnd,ri:parseInt(riStr),pts});
+    laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
   });
 
   // Draw tree dots
@@ -817,24 +829,46 @@ function drawTreeGrid(svg,zone,pxPts,col){
   // Draw laterals (20mm drip lines)
   laterals.forEach(lat=>{
     if(lat.pts.length<1)return;
-    const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-    line.setAttribute('x1',lat.s.x.toFixed(1));line.setAttribute('y1',lat.s.y.toFixed(1));
-    line.setAttribute('x2',lat.e.x.toFixed(1));line.setAttribute('y2',lat.e.y.toFixed(1));
-    line.setAttribute('stroke',col);line.setAttribute('stroke-width','1.5');
-    line.setAttribute('opacity','0.55');line.setAttribute('pointer-events','none');
-    svg.appendChild(line);
-    // Flow arrow on lateral (small triangle at ~1/3 from sub-main end)
-    if(lat.pts.length>=2){
-      const from=lat.smEnd===lat.s?lat.s:lat.e;
-      const to  =lat.smEnd===lat.s?lat.e:lat.s;
-      const t=0.4;
-      const ax=from.x+(to.x-from.x)*t,ay=from.y+(to.y-from.y)*t;
-      const len=Math.hypot(to.x-from.x,to.y-from.y);if(len>4){
+    if(lat.isFlat&&lat.smMid){
+      // Two half-laterals from midpoint outward
+      const drawHalf=(from,to,col_)=>{
+        const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1',from.x.toFixed(1));line.setAttribute('y1',from.y.toFixed(1));
+        line.setAttribute('x2',to.x.toFixed(1));line.setAttribute('y2',to.y.toFixed(1));
+        line.setAttribute('stroke',col_);line.setAttribute('stroke-width','1.5');
+        line.setAttribute('opacity','0.55');line.setAttribute('pointer-events','none');
+        svg.appendChild(line);
+        // Flow arrow at 60% along
+        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len<8)return;
         const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
+        const ax=from.x+ux*len*0.6,ay=from.y+uy*len*0.6;
         const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
         arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
-        arr.setAttribute('fill',col);arr.setAttribute('opacity','0.7');arr.setAttribute('pointer-events','none');
+        arr.setAttribute('fill',col_);arr.setAttribute('opacity','0.7');arr.setAttribute('pointer-events','none');
         svg.appendChild(arr);
+      };
+      drawHalf(lat.smMid,lat.s,col);
+      drawHalf(lat.smMid,lat.e,col);
+    } else {
+      // Single lateral from sub-main end to far end
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',lat.s.x.toFixed(1));line.setAttribute('y1',lat.s.y.toFixed(1));
+      line.setAttribute('x2',lat.e.x.toFixed(1));line.setAttribute('y2',lat.e.y.toFixed(1));
+      line.setAttribute('stroke',col);line.setAttribute('stroke-width','1.5');
+      line.setAttribute('opacity','0.55');line.setAttribute('pointer-events','none');
+      svg.appendChild(line);
+      // Flow arrow at 40% from sub-main end
+      if(lat.pts.length>=2){
+        const from=lat.smEnd===lat.s?lat.s:lat.e;
+        const to  =lat.smEnd===lat.s?lat.e:lat.s;
+        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len>4){
+          const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
+          const ax=from.x+ux*len*0.4,ay=from.y+uy*len*0.4;
+          const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+          arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
+          arr.setAttribute('fill',col);arr.setAttribute('opacity','0.7');arr.setAttribute('pointer-events','none');
+          svg.appendChild(arr);
+        }
       }
     }
   });
@@ -1020,163 +1054,104 @@ function drawTreeGrid(svg,zone,pxPts,col){
       // No slope data — default inlet at smPts[0] (arbitrary, user can tell from context)
       inletPx=smFirst;outletPx=smLast;
     }
-    zone._smInletPx=inletPx;
-    zone._smOutletPx=outletPx;
     zone._smInletLL=p2ll(inletPx.x,inletPx.y);
     zone._smOutletLL=p2ll(outletPx.x,outletPx.y);
+    zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
     zone._aspectScreenRad=aspectScreenRad;
     zone._slopePct=slopePct;
   }
 }
 
 // ── ZONE-TO-MAIN-PIPE CONNECTIONS ─────────────────────────────────────
-// Rules:
-// 1. Only check from the sub-main INLET (uphill end) — that's where water enters.
-// 2. If a main pipe (3″+) passes within 2×rowSpacingM of the zone's uphill edge,
-//    no sub-main is needed — laterals connect directly to that pipe.
-// 3. Otherwise, find the nearest main pipe and connect perpendicularly
-//    (run feeder along slope direction or contour, not diagonally).
-// 4. The feeder route: from sub-main inlet, go straight uphill until hitting
-//    the main pipe. If the main pipe is more "across slope", go along contour.
+// For each crop zone:
+// 1. Check if any main pipe (3″+) passes within 2×rowSpacingM of ANY lateral's
+//    sub-main connection point — if so, that pipe serves directly (no sub-main).
+// 2. Otherwise connect sub-main inlet to nearest main pipe.
 function drawZoneConnections(){
   if(!lyr.zo)return;
   const mainDias=['3','4','5'];
   const maxSearchM=400;
-
   zones.forEach(zone=>{
     if(zone.type==='tank')return;
     if(!zone._smInletLL)return;
-
-    const inletLL=zone._smInletLL;
-    const inletPx=zone._smInletPx;
     const rowSpM=zone.rowSpacingM||7;
+    const mainPipes=pipes.filter(p=>mainDias.includes(p.dia)&&p.pts.length>=2&&p.status!=='damaged');
+    if(!mainPipes.length)return;
+    // Convert lat/lng to pixels NOW at current zoom — never use stored pixel coords
+    const inletPx=ll2p(zone._smInletLL[0],zone._smInletLL[1]);
+    const smEndLLs=zone._smEndLLs||[zone._smInletLL];
     const slopePct=zone._slopePct||0;
     const aspectScreenRad=zone._aspectScreenRad??null;
-
-    // Build list of candidate main pipes with their closest point to the inlet
-    const mainPipes=pipes.filter(p=>
-      mainDias.includes(p.dia)&&
-      p.pts.length>=2&&
-      p.status!=='damaged'
-    );
-    if(!mainPipes.length)return;
-
-    let bestDist=Infinity,bestConnPt=null,bestPipe=null;
-    mainPipes.forEach(pipe=>{
-      for(let i=0;i<pipe.pts.length-1;i++){
-        const cp=closestOnSeg(inletLL,pipe.pts[i],pipe.pts[i+1]);
-        if(cp.d<bestDist&&cp.d<maxSearchM){
-          bestDist=cp.d;bestConnPt=cp.pt;bestPipe=pipe;
+    // Check all lateral connection points for direct main pipe proximity
+    let directPipe=null,directConnPt=null,directDist=Infinity;
+    smEndLLs.forEach(smLL=>{
+      mainPipes.forEach(pipe=>{
+        for(let i=0;i<pipe.pts.length-1;i++){
+          const cp=closestOnSeg(smLL,pipe.pts[i],pipe.pts[i+1]);
+          if(cp.d<directDist&&cp.d<rowSpM*2){directDist=cp.d;directConnPt=cp.pt;directPipe=pipe;}
         }
-      }
+      });
     });
-    if(!bestPipe)return;
-
-    const connPx=ll2p(bestConnPt[0],bestConnPt[1]);
-    const directDistM=bestDist;
-
-    // ── Case 1: Main pipe very close to uphill edge → direct lateral connection ──
-    // If the main pipe is within 2 row spacings of the inlet, it can act as the
-    // header directly. Show laterals notionally connecting to it (no sub-main needed).
-    if(directDistM<rowSpM*2){
-      zone._connMode='direct'; // laterals connect straight to main pipe
-      zone._connDist=Math.round(directDistM);
-      zone._connDia=bestPipe.dia;
-      // Draw a "direct" marker — small green tick on the main pipe at connection point
+    if(directPipe){
+      zone._connMode='direct';zone._connDist=Math.round(directDist);zone._connDia=directPipe.dia;
+      const connPx=ll2p(directConnPt[0],directConnPt[1]);
       const tick=mkCirc(connPx.x,connPx.y,6,'#4ade80','#fff','1.5');
-      tick.setAttribute('pointer-events','none');zSvg.appendChild(tick);
+      tick.setAttribute('pointer-events','none');pSvg.appendChild(tick);
       const tlbl=document.createElementNS('http://www.w3.org/2000/svg','text');
       tlbl.setAttribute('x',(connPx.x+10).toFixed(1));tlbl.setAttribute('y',(connPx.y-5).toFixed(1));
       tlbl.setAttribute('fill','#4ade80');tlbl.setAttribute('font-size','8');
-      tlbl.setAttribute('font-family','-apple-system,sans-serif');
-      tlbl.setAttribute('pointer-events','none');
-      tlbl.textContent=`✓ Direct from ${bestPipe.dia}″`;
-      zSvg.appendChild(tlbl);
-      return;
+      tlbl.setAttribute('font-family','-apple-system,sans-serif');tlbl.setAttribute('pointer-events','none');
+      tlbl.textContent=`✓ Direct from ${directPipe.dia}″`;
+      pSvg.appendChild(tlbl);return;
     }
-
-    // ── Case 2: Need a feeder pipe from sub-main inlet to main pipe ──────────
-    // Determine the best routing: uphill or across-slope.
-    // We compute the angle between the feeder direction and the slope direction.
-    // If the main pipe runs mostly across the slope (contour-parallel),
-    // the feeder should run uphill (perpendicular to main).
-    // If the main pipe runs mostly up the slope, feeder runs across slope.
-    // Either way the ideal feeder is a straight line that hits the main pipe
-    // at close to 90°, which the closestOnSeg already gives us.
-    // The issue is we want the ROUTE to follow terrain sensibly.
-    // Routing logic: extend from inlet in the uphill direction until we
-    // hit the perpendicular foot on the main pipe. This avoids diagonal cuts.
-
-    let routePts=[inletPx,connPx]; // default: straight line
-    if(aspectScreenRad!==null&&slopePct>1){
-      // Uphill direction in screen space
-      const uphillRad=aspectScreenRad+Math.PI; // opposite of downhill
-      const ux=Math.cos(uphillRad),uy=Math.sin(uphillRad);
-      // Project connPx onto the line from inletPx in uphill direction
-      const dx=connPx.x-inletPx.x,dy=connPx.y-inletPx.y;
-      const tUp=dx*ux+dy*uy; // how far uphill the main pipe is
-      // Right-angle direction (across slope = along contour)
-      const cx2=inletPx.x+ux*tUp;
-      const cy2=inletPx.y+uy*tUp;
-      // Route: go uphill first to the main pipe's elevation, then across slope
-      // Only add the elbow if it meaningfully differs from straight line
-      const elbowPx={x:cx2,y:cy2};
-      const elbowDistFromStraight=Math.hypot(
-        elbowPx.x-(inletPx.x+connPx.x)/2,
-        elbowPx.y-(inletPx.y+connPx.y)/2
-      );
-      if(elbowDistFromStraight>15){
-        // Two-segment route: up the slope, then across to the main pipe
-        routePts=[inletPx,elbowPx,connPx];
+    // Feeder needed — find nearest main pipe to inlet
+    let bestDist=Infinity,bestConnPt=null,bestPipe=null;
+    mainPipes.forEach(pipe=>{
+      for(let i=0;i<pipe.pts.length-1;i++){
+        const cp=closestOnSeg(zone._smInletLL,pipe.pts[i],pipe.pts[i+1]);
+        if(cp.d<bestDist&&cp.d<maxSearchM){bestDist=cp.d;bestConnPt=cp.pt;bestPipe=pipe;}
       }
+    });
+    if(!bestPipe)return;
+    const connPx=ll2p(bestConnPt[0],bestConnPt[1]);
+    // Route uphill then across if sloped, straight if flat
+    let routePts=[inletPx,connPx];
+    if(aspectScreenRad!==null&&slopePct>2){
+      const ur=aspectScreenRad+Math.PI;
+      const ux=Math.cos(ur),uy=Math.sin(ur);
+      const dx=connPx.x-inletPx.x,dy=connPx.y-inletPx.y;
+      const tUp=dx*ux+dy*uy;
+      const elbow={x:inletPx.x+ux*tUp,y:inletPx.y+uy*tUp};
+      if(Math.hypot(elbow.x-(inletPx.x+connPx.x)/2,elbow.y-(inletPx.y+connPx.y)/2)>15)
+        routePts=[inletPx,elbow,connPx];
     }
-
-    // Draw feeder route
-    const routePath=document.createElementNS('http://www.w3.org/2000/svg','polyline');
-    routePath.setAttribute('points',routePts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-    routePath.setAttribute('stroke','#fb923c');routePath.setAttribute('stroke-width','2');
-    routePath.setAttribute('stroke-dasharray','7,3');routePath.setAttribute('fill','none');
-    routePath.setAttribute('opacity','0.9');routePath.setAttribute('pointer-events','none');
-    zSvg.appendChild(routePath);
-
-    // Inlet dot
-    const dot1=mkCirc(inletPx.x,inletPx.y,5,'#fb923c','#fff','1.5');
-    dot1.setAttribute('pointer-events','none');zSvg.appendChild(dot1);
-
-    // Connection point ring on main pipe
-    const dot2=mkCirc(connPx.x,connPx.y,5,'none','#fb923c','2');
-    dot2.setAttribute('pointer-events','none');zSvg.appendChild(dot2);
-
-    // Label at midpoint of route with distance and click-to-draw
-    const midPt=routePts[Math.floor(routePts.length/2)];
+    // Draw into pSvg (above zones, z-index 410) so clicks work
+    const rp=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    rp.setAttribute('points',routePts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+    rp.setAttribute('stroke','#fb923c');rp.setAttribute('stroke-width','2');
+    rp.setAttribute('stroke-dasharray','7,3');rp.setAttribute('fill','none');
+    rp.setAttribute('opacity','0.9');rp.setAttribute('pointer-events','none');
+    pSvg.appendChild(rp);
+    const d1=mkCirc(inletPx.x,inletPx.y,5,'#fb923c','#fff','1.5');
+    d1.setAttribute('pointer-events','none');pSvg.appendChild(d1);
+    const d2=mkCirc(connPx.x,connPx.y,5,'none','#fb923c','2');
+    d2.setAttribute('pointer-events','none');pSvg.appendChild(d2);
+    const mid=routePts[Math.floor(routePts.length/2)];
     const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
-    lbl.setAttribute('x',midPt.x.toFixed(1));lbl.setAttribute('y',(midPt.y-7).toFixed(1));
+    lbl.setAttribute('x',mid.x.toFixed(1));lbl.setAttribute('y',(mid.y-7).toFixed(1));
     lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#fb923c');
     lbl.setAttribute('font-size','9');lbl.setAttribute('font-weight','bold');
     lbl.setAttribute('font-family','-apple-system,sans-serif');
     lbl.setAttribute('pointer-events','all');lbl.style.cursor='pointer';
-    lbl.setAttribute('opacity','0.95');
-    // Feeder pipe length = straight-line distance in metres (already computed)
-    const feederM=directDistM;
-    lbl.textContent=`→ ${bestPipe.dia}″ · ${feederM.toFixed(0)}m feeder`;
-    // Click = start drawing this feeder pipe
+    lbl.textContent=`→ ${bestPipe.dia}″ · ${bestDist.toFixed(0)}m feeder`;
     lbl.addEventListener('click',e=>{
-      e.stopPropagation();
-      setTool('pipe');setPSt('planned');
-      drawPts=[inletLL];
-      // Add elbow point if two-segment route
-      if(routePts.length===3){
-        const elbowLL=p2ll(routePts[1].x,routePts[1].y);
-        drawPts.push(elbowLL);
-      }
-      drawPts.push([...bestConnPt]);
-      ghostPt=bestConnPt;updateGhost();
+      e.stopPropagation();setTool('pipe');setPSt('planned');
+      drawPts=[zone._smInletLL];
+      if(routePts.length===3)drawPts.push(p2ll(routePts[1].x,routePts[1].y));
+      drawPts.push([...bestConnPt]);ghostPt=bestConnPt;updateGhost();
     });
-    zSvg.appendChild(lbl);
-
-    zone._connMode='feeder';
-    zone._connDist=Math.round(directDistM);
-    zone._connDia=bestPipe.dia;
+    pSvg.appendChild(lbl);
+    zone._connMode='feeder';zone._connDist=Math.round(bestDist);zone._connDia=bestPipe.dia;
   });
 }
 
@@ -1221,12 +1196,26 @@ async function fetchZoneElevation(zone){
     }
 
     const locations=uniq.map(p=>`${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('|');
-    const url=`https://api.opentopodata.org/v1/srtm30m?locations=${locations}`;
-    const res=await fetch(url,{headers:{'Accept':'application/json'}});
-    if(res.status===429){throw new Error('Rate limited — wait 1 minute and try again');}
-    if(!res.ok){throw new Error('API returned '+res.status);}
-    const data=await res.json();
-    if(data.status!=='OK'){throw new Error('API: '+data.status+(data.error?' — '+data.error:''));}
+    // Try Open-Topo-Data first, fall back to open-elevation.com
+    let data=null;
+    const apis=[
+      `https://api.opentopodata.org/v1/srtm30m?locations=${locations}`,
+      `https://api.open-elevation.com/api/v1/lookup?locations=${uniq.map(p=>`${p[0].toFixed(6)},${p[1].toFixed(6)}`).map(ll=>`{"latitude":${ll.split(',')[0]},"longitude":${ll.split(',')[1]}}`).join(',')}`
+    ];
+    // Use opentopodata — simple pipe-separated format
+    const url=apis[0];
+    let res;
+    try{
+      res=await fetch(url);
+    }catch(fetchErr){
+      throw new Error('Network error — check internet connection: '+fetchErr.message);
+    }
+    if(res.status===429){throw new Error('Rate limited — wait 60 seconds and retry');}
+    if(!res.ok){throw new Error(`API ${res.status}: ${res.statusText}`);}
+    data=await res.json();
+    if(!data||data.status!=='OK'){
+      throw new Error('API error: '+(data?.error||data?.status||'unknown'));
+    }
 
     const elevPts=data.results
       .map((r,i)=>({lat:uniq[i][0],lng:uniq[i][1],elev:r.elevation}))
@@ -2175,7 +2164,8 @@ function renderAcct(){
   const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
   const fmtJD=v=>v>0?`${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} JD`:'—';
 
-  if(!acctItems.length)initDefaultAcctItems();
+  if(!acctItems.length){initDefaultAcctItems();}
+  else{migrateAcctItems();}
 
   let h='';
   // Materials
@@ -2240,6 +2230,29 @@ function renderAcct(){
   body.innerHTML=h;
 }
 window.renderAcct=renderAcct;
+
+// If saved acctItems is missing any default auto-rows (e.g. after a code update),
+// insert them before the first manual item so they appear at the top.
+function migrateAcctItems(){
+  const required=[
+    {label:'20mm drip lateral',unit:'m',autoKey:'lat20mm'},
+    {label:'1½″ sub-main pipe',unit:'m',autoKey:'sub1.5in'},
+    {label:'2″ sub-main pipe',unit:'m',autoKey:'sub2in'},
+    {label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders'},
+    {label:'Drip emitters',unit:'pcs',autoKey:'emitters'},
+  ];
+  let changed=false;
+  // Find insertion point — before first non-auto item
+  const firstManualIdx=acctItems.findIndex(i=>!i.autoKey);
+  const insertAt=firstManualIdx>=0?firstManualIdx:acctItems.length;
+  required.forEach(req=>{
+    if(!acctItems.find(i=>i.autoKey===req.autoKey)){
+      acctItems.splice(insertAt,0,{id:acctNextId++,...req,unitPrice:0});
+      changed=true;
+    }
+  });
+  if(changed)pushAcctToFB();
+}
 
 function initDefaultAcctItems(){
   acctItems=[
