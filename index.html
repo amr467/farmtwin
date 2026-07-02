@@ -1,0 +1,2387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>FarmTwin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--sur:#161b22;--sur2:#1c2129;--sur3:#21262d;
+  --bdr:#30363d;--bdr2:#484f58;
+  --tx:#e6edf3;--tx2:#8b949e;--tx3:#6e7681;
+  --ok:#3fb950;--info:#58a6ff;--warn:#d29922;--err:#f85149;
+  --well:#22d3ee;--tank:#fb923c;--pump:#a78bfa;--ep:#4ade80;
+  --reuse:#a3e635;
+  --r:8px;--rs:5px;
+}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
+#app{display:flex;flex-direction:column;height:100vh}
+
+/* topbar */
+#topbar{height:44px;background:var(--sur);border-bottom:1px solid var(--bdr);
+  display:flex;align-items:center;padding:0 12px;gap:8px;flex-shrink:0;z-index:600}
+.logo{font-weight:700;font-size:15px;color:var(--ok);letter-spacing:-.3px}
+.sep{width:1px;height:20px;background:var(--bdr);flex-shrink:0}
+.tbi{height:26px;background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);
+  color:var(--tx);padding:0 8px;font-size:11px;font-family:inherit}
+.tbi:focus{outline:none;border-color:var(--ok)}
+.btn{height:26px;padding:0 9px;background:var(--sur2);border:1px solid var(--bdr);
+  border-radius:var(--rs);color:var(--tx2);font-size:11px;cursor:pointer;white-space:nowrap;font-family:inherit}
+.btn:hover{background:var(--sur3);color:var(--tx)}
+.btn.on{background:var(--ok);border-color:var(--ok);color:#0d1117;font-weight:600}
+.btn.warn{border-color:var(--warn);color:var(--warn)}
+.btn.err{border-color:var(--err);color:var(--err)}
+#sync{height:20px;padding:0 7px;border-radius:10px;font-size:10px;font-weight:500;
+  display:flex;align-items:center;gap:4px}
+#sync.synced{background:#0d2c1a;border:1px solid #1a4731;color:var(--ok)}
+#sync.syncing{background:#1c2030;border:1px solid #2d3a5a;color:var(--info)}
+#sync.offline{background:#2c1418;border:1px solid #5a2d32;color:var(--err)}
+
+/* map area */
+#mw{flex:1;position:relative;overflow:hidden}
+#map{width:100%;height:100%}
+.ol{position:absolute;inset:0;overflow:visible;pointer-events:none}
+#zone-svg{z-index:400}
+#pipe-svg{z-index:410}
+#ghost-svg{z-index:420}
+#vtx-svg{z-index:430}
+#node-layer{position:absolute;inset:0;z-index:450;pointer-events:none}
+#snap-ring{position:absolute;border-radius:50%;border:2px solid var(--ok);
+  transform:translate(-50%,-50%);pointer-events:none;display:none;z-index:440}
+.hidden{display:none!important}
+
+/* hud */
+#hud{height:60px;background:var(--sur);border-top:1px solid var(--bdr);
+  display:flex;align-items:center;padding:0 10px;gap:5px;flex-shrink:0;z-index:600;overflow-x:auto}
+.hgrp{display:flex;gap:3px;align-items:center;flex-shrink:0}
+.hsep{width:1px;height:30px;background:var(--bdr);margin:0 3px}
+.tool{width:44px;height:44px;padding:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;font-size:17px}
+.tool .lbl{font-size:8px;font-weight:700;letter-spacing:.04em}
+.pill{height:26px;padding:0 9px;border-radius:13px;border:1.5px solid var(--bdr2);
+  background:var(--sur2);color:var(--tx);font-size:11px;cursor:pointer;font-family:inherit}
+.pill.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
+.pill.ex.on{border-color:var(--ok);background:#0d2c1a;color:var(--ok)}
+.pill.pl.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
+.pill.dmg.on{border-color:var(--err);background:#2c1418;color:var(--err)}
+
+/* property card */
+#pcard{position:absolute;z-index:850;background:var(--sur);border:1px solid var(--bdr2);
+  border-radius:var(--r);padding:11px 13px;min-width:220px;max-width:270px;
+  box-shadow:0 8px 24px #000a;pointer-events:all;display:none}
+.pc-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  margin-bottom:8px}
+.pc-r{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.pc-r label{font-size:11px;color:var(--tx2);width:90px;flex-shrink:0}
+.pc-r input,.pc-r select{flex:1;height:24px;background:var(--sur2);border:1px solid var(--bdr2);
+  border-radius:var(--rs);color:var(--tx);font-size:11px;padding:0 6px;font-family:inherit}
+.pc-r input:focus,.pc-r select:focus{outline:none;border-color:var(--ok)}
+.pc-hint{font-size:10px;color:var(--tx3);margin:3px 0 5px;line-height:1.5}
+.pc-btns{display:flex;gap:5px;margin-top:7px}
+.pcb{flex:1;height:24px;border-radius:var(--rs);border:1px solid var(--bdr2);
+  background:var(--sur2);color:var(--tx2);font-size:11px;cursor:pointer;font-family:inherit}
+.pcb:hover{background:var(--sur3);color:var(--tx)}
+.pcb.ok{border-color:var(--ok);background:#0d2c1a;color:var(--ok)}
+.pcb.del{border-color:var(--err);background:#2c1418;color:var(--err)}
+.pcb.act{border-color:var(--reuse);background:#1a2800;color:var(--reuse)}
+.pc-sect{border-top:1px solid var(--bdr);margin-top:7px;padding-top:7px}
+
+/* context menu */
+#ctx{position:fixed;z-index:2000;display:none}
+.ctx-ring{position:relative;width:170px;height:170px}
+.ctx-item{position:absolute;width:50px;height:50px;border-radius:50%;border:2px solid;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  cursor:pointer;transform:translate(-50%,-50%);transition:transform .1s;backdrop-filter:blur(6px)}
+.ctx-item:hover{transform:translate(-50%,-50%) scale(1.18)}
+.ci-lbl{font-size:9px;font-weight:700}
+.ci-well{background:#072028;border-color:var(--well);color:var(--well)}
+.ci-tank{background:#201008;border-color:var(--tank);color:var(--tank)}
+.ci-pump{background:#140e24;border-color:var(--pump);color:var(--pump)}
+.ci-ep{background:#071408;border-color:var(--ep);color:var(--ep)}
+#ctx-bd{position:fixed;inset:0;z-index:1999}
+
+/* sidebar */
+#sb{position:absolute;right:0;top:0;bottom:0;width:270px;z-index:700;
+  background:var(--sur);border-left:1px solid var(--bdr);
+  display:flex;flex-direction:column;transform:translateX(100%);transition:transform .2s}
+#sb.open{transform:none}
+.sb-hd{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 12px;border-bottom:1px solid var(--bdr)}
+.sb-bd{flex:1;overflow-y:auto;padding:8px 10px}
+.sb-sec{margin-bottom:12px}
+.sb-sec-h{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--tx3);margin-bottom:5px}
+.sb-item{display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:var(--rs);
+  border:1px solid var(--bdr);background:var(--sur2);margin-bottom:3px;cursor:pointer;font-size:11px}
+.sb-item:hover{border-color:var(--bdr2)}
+.sb-item.sel{border-color:var(--ok);background:#0d2c1a}
+.sb-sw{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.sb-nm{flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-mt{font-size:10px;color:var(--tx3);flex-shrink:0}
+
+/* legend */
+#legend{position:absolute;bottom:70px;left:10px;z-index:600;background:var(--sur);
+  border:1px solid var(--bdr);border-radius:var(--r);padding:8px 10px;font-size:10px;pointer-events:none}
+.lg-r{display:flex;align-items:center;gap:5px;margin-bottom:3px;color:var(--tx2)}
+
+/* pipe length labels */
+.plen{position:absolute;background:#0009;color:var(--tx2);font-size:9px;pointer-events:none;
+  padding:1px 4px;border-radius:2px;white-space:nowrap;z-index:460;transform:translateX(-50%)}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px}
+button,input,select{font-family:inherit}
+/* ── Accounting panel ─────────────────────────────── */
+#acct-panel{position:fixed;inset:0;z-index:900;background:#0009;display:none;align-items:flex-start;justify-content:center;padding-top:56px}
+#acct-panel.open{display:flex}
+#acct-inner{background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r);
+  width:min(720px,96vw);max-height:82vh;display:flex;flex-direction:column;
+  box-shadow:0 12px 40px #000c}
+.acct-head{display:flex;align-items:center;justify-content:space-between;
+  padding:11px 15px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.acct-title{font-weight:700;font-size:14px}
+.acct-body{flex:1;overflow-y:auto;padding:12px 15px}
+.acct-sec{margin-bottom:16px}
+.acct-sec-h{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--tx3);margin-bottom:7px}
+.acct-table{width:100%;border-collapse:collapse;font-size:11px}
+.acct-table th{text-align:left;padding:3px 6px;color:var(--tx3);font-size:9px;
+  text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bdr)}
+.acct-table td{padding:5px 6px;border-bottom:1px solid var(--bdr);vertical-align:middle}
+.acct-table tr:last-child td{border-bottom:none}
+.acct-num{text-align:right;font-variant-numeric:tabular-nums}
+.acct-inp{background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);
+  color:var(--tx);padding:2px 6px;width:80px;height:22px;font-size:11px;font-family:inherit}
+.acct-inp:focus{outline:none;border-color:var(--ok)}
+.acct-total{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 13px;background:var(--sur3);border-radius:var(--rs);
+  border:1px solid var(--bdr2);margin-top:10px}
+.acct-total-lbl{font-weight:600;font-size:13px}
+.acct-total-val{font-weight:700;font-size:17px;color:var(--ok)}
+.acct-add{display:flex;gap:5px;margin-top:8px}
+.acct-add input{height:26px;background:var(--sur2);border:1px solid var(--bdr2);
+  border-radius:var(--rs);color:var(--tx);padding:0 7px;font-size:11px;font-family:inherit}
+.acct-add input:focus{outline:none;border-color:var(--ok)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="topbar">
+  <span class="logo">🌿 FarmTwin</span>
+  <div class="sep"></div>
+  <input class="tbi" id="proj-id" value="mafraq-farm-1" style="width:130px">
+  <button class="btn" onclick="switchProject()">Load</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="undo()">↩</button>
+  <button class="btn" onclick="redo()">↪</button>
+  <div class="sep"></div>
+  <button class="btn" onclick="toggleSidebar()">≡ Lists</button>
+  <button class="btn" onclick="toggleAcct()" id="acct-btn">💰 Accounting</button>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <span id="save-txt" style="font-size:10px;color:var(--tx3)"></span>
+    <div id="sync" class="offline"><span style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block"></span><span id="sync-txt">offline</span></div>
+  </div>
+</div>
+
+<div id="mw">
+  <div id="map"></div>
+  <svg id="zone-svg" class="ol" xmlns="http://www.w3.org/2000/svg"></svg>
+  <svg id="pipe-svg" class="ol" xmlns="http://www.w3.org/2000/svg"></svg>
+  <svg id="ghost-svg" class="ol" xmlns="http://www.w3.org/2000/svg"></svg>
+  <svg id="vtx-svg" class="ol" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="node-layer"></div>
+  <div id="snap-ring"></div>
+  <div id="pcard"></div>
+  <div class="hidden" id="ctx-bd" onclick="closeCtx()"></div>
+  <div id="ctx"></div>
+  <div id="sb">
+    <div class="sb-hd"><span style="font-weight:600">Items</span><button class="btn" onclick="toggleSidebar()">✕</button></div>
+    <div class="sb-bd" id="sb-bd"></div>
+  </div>
+  <div id="legend">
+    <div style="font-size:9px;font-weight:700;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;letter-spacing:.06em">Status · Width=diameter</div>
+    <div class="lg-r"><svg width="26" height="7"><line x1="0" y1="3.5" x2="26" y2="3.5" stroke="#3fb950" stroke-width="4" stroke-linecap="round"/></svg>Existing</div>
+    <div class="lg-r"><svg width="26" height="7"><line x1="0" y1="3.5" x2="26" y2="3.5" stroke="#58a6ff" stroke-width="3" stroke-linecap="round" stroke-dasharray="6,4"/></svg>Planned new</div>
+    <div class="lg-r"><svg width="26" height="7"><line x1="0" y1="3.5" x2="26" y2="3.5" stroke="#a3e635" stroke-width="3" stroke-linecap="round" stroke-dasharray="5,3"/></svg>Reuse existing</div>
+    <div class="lg-r"><svg width="26" height="7"><line x1="0" y1="3.5" x2="26" y2="3.5" stroke="#f85149" stroke-width="3" stroke-linecap="round" stroke-dasharray="4,3"/></svg>Damaged</div>
+  </div>
+</div>
+
+<div id="hud">
+  <div class="hgrp">
+    <button class="btn tool on" id="t-select" onclick="setTool('select')">↖<span class="lbl">SELECT</span></button>
+    <button class="btn tool" id="t-pipe" onclick="setTool('pipe')">⌇<span class="lbl">PIPE</span></button>
+    <button class="btn tool" id="t-zone" onclick="setTool('zone')">⬡<span class="lbl">ZONE</span></button>
+  </div>
+  <div class="hsep"></div>
+  <div class="hgrp" id="pipe-opts" style="display:none">
+    <button class="pill ex on" id="ps-existing" onclick="setPSt('existing')">Existing</button>
+    <button class="pill pl" id="ps-planned" onclick="setPSt('planned')">New</button>
+    <button class="pill dmg" id="ps-damaged" onclick="setPSt('damaged')">Damaged</button>
+  </div>
+  <div class="hsep" id="pipe-sep" style="display:none"></div>
+  <div class="hgrp" id="dia-opts" style="display:none">
+    <button class="pill" id="d-5" onclick="setDia('5')">5″</button>
+    <button class="pill on" id="d-3" onclick="setDia('3')">3″</button>
+    <button class="pill" id="d-4" onclick="setDia('4')">4″</button>
+    <button class="pill" id="d-2" onclick="setDia('2')">2″</button>
+    <button class="pill" id="d-20mm" onclick="setDia('20mm')">20mm</button>
+  </div>
+  <div class="hsep"></div>
+  <div class="hgrp">
+    <button class="pill on" id="lyr-ex" onclick="toggleLyr('ex')">Existing</button>
+    <button class="pill on" id="lyr-pl" onclick="toggleLyr('pl')">Planned</button>
+    <button class="pill on" id="lyr-zo" onclick="toggleLyr('zo')">Zones</button>
+    <button class="pill on" id="lyr-el" onclick="toggleLyr('el')">Elev</button>
+    <button class="pill on" id="lyr-ln" onclick="toggleLyr('ln')">Lengths</button>
+  </div>
+  <div class="hsep"></div>
+  <div class="hgrp" id="draw-act" style="display:none">
+    <button class="btn on" onclick="finishDraw()">✓ Done</button>
+    <button class="btn" onclick="cancelDraw()">✕ Cancel</button>
+  </div>
+  <div class="hgrp">
+    <button class="btn" id="del-btn" onclick="deleteSelected()">🗑 Delete</button>
+  </div>
+</div>
+
+</div>
+
+<!-- Accounting panel -->
+<div id="acct-panel">
+  <div id="acct-inner">
+    <div class="acct-head">
+      <span class="acct-title">💰 Accounting</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn" onclick="exportAcctCSV()" title="Export full GAAP-compatible CSV">⬇ Export CSV</button>
+        <button class="btn" onclick="exportSummaryCSV()" title="Export one-page summary">⬇ Summary</button>
+        <button class="btn" onclick="toggleAcct()">✕ Close</button>
+      </div>
+    </div>
+    <div class="acct-body" id="acct-body"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module">
+import{initializeApp}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+import{getDatabase,ref,onValue,set}from'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+
+const fb=initializeApp({
+  apiKey:"AIzaSyAkqts691Hg1uXhLDRloKoAgNotCwYx6XY",
+  authDomain:"pipemap-45e15.firebaseapp.com",
+  databaseURL:"https://pipemap-45e15-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:"pipemap-45e15",storageBucket:"pipemap-45e15.firebasestorage.app",
+  messagingSenderId:"172642929084",appId:"1:172642929084:web:11605fc95947cbbb3403b9"
+});
+const db=getDatabase(fb);
+let projId='mafraq-farm-1',fbUnsub=null,ign=false;
+const dbRef=()=>ref(db,'projects/'+projId+'/ft');
+
+function setSS(s){
+  const p=document.getElementById('sync'),t=document.getElementById('sync-txt');
+  p.className=s;t.textContent=s==='synced'?'saved':s==='syncing'?'saving…':'offline';
+}
+function san(v){
+  if(v===undefined||v===null)return null;
+  if(Array.isArray(v))return v.map(san);
+  if(typeof v==='object'){const o={};for(const k in v)o[k]=san(v[k]);return o;}
+  return v;
+}
+
+// ── DATA ──────────────────────────────────────────────────────────────
+// pipes: {id,pts,dia,status:'existing'|'planned'|'damaged',isReuse:bool,label,valveState,pumpNodeId}
+// nodes: {id,type:'well'|'tank'|'pump'|'endpoint',lat,lng,label,elev,
+//         well: depth,drawdownFactor,pumpHead,pumpFlowM3h
+//         tank: waterLevel,maxDepth,maxFlowM3h
+//         pump: pumpHead,pumpFlowM3h,on:bool  (point-node pump on pipe)
+//         endpoint: sectionId}
+// zones: {id,label,polygon,rowSpacingM,treeSpacingM,emitters,lhrPerEmitter,
+//         color,type:'zone'|'tank',
+//         tank: wallType:'vertical'|'sloped', waterLevel,maxDepth,maxFlowM3h,soilAngle}
+let pipes=[],nodes=[],zones=[],sections=[];
+let nc=1,pc=1,zc=1;
+
+// ── HISTORY ───────────────────────────────────────────────────────────
+let hist=[],redo_=[];
+const snap_=()=>JSON.parse(JSON.stringify({pipes,nodes,zones,sections}));
+function pushH(){hist.push(snap_());if(hist.length>60)hist.shift();redo_=[];}
+window.undo=()=>{if(!hist.length)return;redo_.push(snap_());const s=hist.pop();pipes=s.pipes;nodes=s.nodes;zones=s.zones;sections=s.sections;pushToFB();redraw();};
+window.redo=()=>{if(!redo_.length)return;hist.push(snap_());const s=redo_.pop();pipes=s.pipes;nodes=s.nodes;zones=s.zones;sections=s.sections;pushToFB();redraw();};
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────
+const PW={'5':10,'4':7,'3':5,'2':3.5,'20mm':2};
+const PM={'5':0.127,'4':0.102,'3':0.076,'2':0.051,'20mm':0.020};
+const SNAP_PX=20;        // pixel snap threshold for existing-layer to existing-layer
+const ANG_SNAP=8;        // degrees angle magnetism
+const PAR_DIST=50;       // metres for parallel detection
+const ZONE_COLS=['#4ade80','#60a5fa','#fb923c','#f472b6','#a78bfa','#34d399','#fbbf24'];
+const SCOL={existing:'#3fb950',planned:'#58a6ff',damaged:'#f85149'};
+const SDASH={existing:null,planned:'9,5',damaged:'4,3'};
+const NCOL={well:'#22d3ee',tank:'#fb923c',pump:'#a78bfa',endpoint:'#4ade80'};
+const NSZ={well:32,tank:28,pump:24,endpoint:22};
+
+// ── MAP ───────────────────────────────────────────────────────────────
+const map=L.map('map',{center:[32.495,36.168],zoom:16,zoomControl:false,attributionControl:false,preferCanvas:false});
+L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{maxZoom:21}).addTo(map);
+L.control.zoom({position:'topright'}).addTo(map);
+const pSvg=document.getElementById('pipe-svg'),gSvg=document.getElementById('ghost-svg');
+const zSvg=document.getElementById('zone-svg'),vSvg=document.getElementById('vtx-svg');
+
+function ll2p(lat,lng){const p=map.latLngToContainerPoint([lat,lng]);return{x:p.x,y:p.y};}
+function p2ll(x,y){const l=map.containerPointToLatLng([x,y]);return[l.lat,l.lng];}
+function hav(a,b){
+  const R=6371000,d1=(b[0]-a[0])*Math.PI/180,d2=(b[1]-a[1])*Math.PI/180;
+  const s=Math.sin(d1/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(d2/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+function angDeg(a,b){return Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;}
+function angDiff(a,b){let d=Math.abs(a-b)%360;return d>180?360-d:d;}
+
+function resizeSvgs(){
+  const w=map.getContainer().offsetWidth,h=map.getContainer().offsetHeight;
+  [pSvg,gSvg,zSvg,vSvg].forEach(s=>{s.setAttribute('width',w);s.setAttribute('height',h);s.setAttribute('viewBox',`0 0 ${w} ${h}`);});
+}
+window.addEventListener('resize',()=>{map.invalidateSize();resizeSvgs();redraw();});
+map.on('resize',resizeSvgs);
+map.on('moveend zoomend',()=>{redraw();updateGhost();});
+setTimeout(resizeSvgs,50);
+
+// ── TOOL STATE ────────────────────────────────────────────────────────
+let tool='select',pipeSt='existing',dia='3';
+let drawPts=[],ghostPt=null,angSnap=null;
+let selPipe=null,selNode=null,selZone=null; // actual objects
+let pendingZoneType='zone';
+let lyr={ex:true,pl:true,zo:true,el:true,ln:true};
+let activeDrag=null,lastClickT=0;
+
+// ── LAYER HELPERS ─────────────────────────────────────────────────────
+// Damaged pipes are existing infrastructure (in the ground, just need replacing).
+// They snap to and interact with the existing layer, not the planned layer.
+function pipeLayer(p){return(p.status==='existing'||p.status==='damaged')?'ex':'pl';}
+// Current drawing layer
+function drawLayer(){return(pipeSt==='existing'||pipeSt==='damaged')?'ex':'pl';}
+// Pipe color including reuse variant
+function pipeCol(p){
+  if(p.isReuse)return'#a3e635';
+  return SCOL[p.status]||'#888';
+}
+function pipeDash(p){
+  if(p.isReuse)return'5,3';
+  return SDASH[p.status]||null;
+}
+function pipeW(p){return PW[p.dia]||3;}
+
+// ── SNAPPING ──────────────────────────────────────────────────────────
+// KEY RULE: existing-layer pipes only snap to other existing-layer things.
+//           planned-layer pipes only snap to other planned-layer things.
+//           Nodes snap to any pipe of any layer.
+
+function pixDist(a,b){return Math.hypot(b.x-a.x,b.y-a.y);}
+
+function findSnap(lat,lng,exPipeId){
+  const curLayer=drawLayer();
+  const curPx=ll2p(lat,lng);
+  let best=null,bestD=Infinity;
+
+  // Nodes (any layer can snap to named nodes)
+  nodes.forEach(nd=>{
+    const npx=ll2p(nd.lat,nd.lng);
+    const d=pixDist(curPx,npx);
+    if(d<SNAP_PX&&d<bestD){bestD=d;best={type:'node',pt:[nd.lat,nd.lng],nodeId:nd.id};}
+  });
+
+  // Pipes — only same-layer
+  pipes.forEach(pipe=>{
+    if(pipe.id===exPipeId)return;
+    if(pipeLayer(pipe)!==curLayer)return; // layer isolation
+    const pts=pipe.pts;
+    // endpoints
+    [[0,'start'],[pts.length-1,'end']].forEach(([i,end])=>{
+      const ppx=ll2p(pts[i][0],pts[i][1]);
+      const d=pixDist(curPx,ppx);
+      if(d<SNAP_PX&&d<bestD){bestD=d;best={type:'endpoint',pt:pts[i],pipeId:pipe.id,end};}
+    });
+    // midspan
+    for(let i=0;i<pts.length-1;i++){
+      const cp=closestOnSeg([lat,lng],pts[i],pts[i+1]);
+      const cpPx=ll2p(cp.pt[0],cp.pt[1]);
+      const d=pixDist(curPx,cpPx);
+      if(d<SNAP_PX*0.7&&d<bestD){ // tighter for midspan
+        const dS=pixDist(cpPx,ll2p(pts[i][0],pts[i][1]));
+        const dE=pixDist(cpPx,ll2p(pts[i+1][0],pts[i+1][1]));
+        if(dS>8&&dE>8){bestD=d;best={type:'midspan',pt:cp.pt,pipeId:pipe.id,segIdx:i};}
+      }
+    }
+  });
+  return best;
+}
+
+function closestOnSeg(p,a,b){
+  const mLat=111320,mLng=111320*Math.cos(a[0]*Math.PI/180);
+  const bx=(b[1]-a[1])*mLng,by=(b[0]-a[0])*mLat;
+  const px=(p[1]-a[1])*mLng,py=(p[0]-a[0])*mLat;
+  const lsq=bx*bx+by*by;if(!lsq)return{pt:a,t:0,d:hav(p,a)};
+  let t=((px*bx+py*by)/lsq);t=Math.max(0,Math.min(1,t));
+  const rp=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])];
+  return{pt:rp,t,d:hav(p,rp)};
+}
+
+function computeAngSnap(fromLat,fromLng,toLat,toLng){
+  const p1=ll2p(fromLat,fromLng),p2=ll2p(toLat,toLng);
+  const raw=angDeg(p1,p2);
+  const mags=[0,45,90,135,180,-135,-90,-45];
+  // Only parallel-snap to same-layer pipes
+  pipes.filter(p=>pipeLayer(p)===drawLayer()).forEach(pipe=>{
+    for(let i=0;i<pipe.pts.length-1;i++){
+      const a=pipe.pts[i],b=pipe.pts[i+1];
+      const mid=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+      if(hav([fromLat,fromLng],mid)>PAR_DIST)continue;
+      const ang=angDeg(ll2p(a[0],a[1]),ll2p(b[0],b[1]));
+      mags.push(ang,ang+180,ang-180);
+    }
+  });
+  for(const m of mags){if(angDiff(raw,m)<=ANG_SNAP)return m;}
+  return null;
+}
+
+function applyAngSnap(fromLat,fromLng,toLat,toLng,ang){
+  if(ang===null)return[toLat,toLng];
+  const p1=ll2p(fromLat,fromLng),p2=ll2p(toLat,toLng);
+  const dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.sqrt(dx*dx+dy*dy);
+  const rad=ang*Math.PI/180;
+  return p2ll(p1.x+len*Math.cos(rad),p1.y+len*Math.sin(rad));
+}
+
+// ── TOPOLOGY ─────────────────────────────────────────────────────────
+function buildTopo(){
+  const eps=[];
+  pipes.forEach(p=>{if(p.pts.length<2)return;eps.push({pt:p.pts[0]});eps.push({pt:p.pts[p.pts.length-1]});});
+  const seen=new Set(),juncs=[];
+  eps.forEach((ep,i)=>{
+    if(seen.has(i))return;
+    const cl=[ep];seen.add(i);
+    eps.forEach((ep2,j)=>{
+      if(i===j||seen.has(j))return;
+      if(pixDist(ll2p(ep.pt[0],ep.pt[1]),ll2p(ep2.pt[0],ep2.pt[1]))<SNAP_PX){cl.push(ep2);seen.add(j);}
+    });
+    if(cl.length>1){
+      const lat=cl.reduce((a,c)=>a+c.pt[0],0)/cl.length;
+      const lng=cl.reduce((a,c)=>a+c.pt[1],0)/cl.length;
+      juncs.push({lat,lng,n:cl.length});
+    }
+  });
+  return juncs;
+}
+
+function splitPipe(pipe,segIdx,splitPt){
+  const ptsA=[...pipe.pts.slice(0,segIdx+1),splitPt];
+  const ptsB=[splitPt,...pipe.pts.slice(segIdx+1)];
+  pipe.pts=ptsA;
+  const pb={id:'p'+Date.now()+'_'+Math.random().toString(36).slice(2,5)+'b',
+    label:'Pipe '+pc++,pts:ptsB,dia:pipe.dia??'3',
+    status:pipe.status??'existing',isReuse:pipe.isReuse||false,valveState:pipe.valveState||'open'};
+  pipes.push(pb);
+  return splitPt;
+}
+
+// ── PIPE RENDERING ───────────────────────────────────────────────────
+function mkPath(pts,stroke,sw,dash,op){
+  if(pts.length<2)return null;
+  const d='M'+pts.map(p=>p.x+','+p.y).join('L');
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',d);path.setAttribute('stroke',stroke);
+  path.setAttribute('stroke-width',sw);path.setAttribute('fill','none');
+  path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');
+  if(dash)path.setAttribute('stroke-dasharray',dash);
+  if(op!=null)path.setAttribute('opacity',op);
+  return path;
+}
+function mkCirc(cx,cy,r,fill,stroke,sw){
+  const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  c.setAttribute('cx',cx);c.setAttribute('cy',cy);c.setAttribute('r',r);
+  c.setAttribute('fill',fill);c.setAttribute('stroke',stroke);c.setAttribute('stroke-width',sw);
+  return c;
+}
+
+function drawArrows(svg,pts,col,w){
+  let total=0;
+  for(let i=0;i<pts.length-1;i++)total+=Math.hypot(pts[i+1].x-pts[i].x,pts[i+1].y-pts[i].y);
+  if(total<25)return;
+  const cnt=Math.max(1,Math.floor(total/130));
+  for(let k=1;k<=cnt;k++){
+    let acc=0,td=total*k/(cnt+1);
+    for(let i=0;i<pts.length-1;i++){
+      const sl=Math.hypot(pts[i+1].x-pts[i].x,pts[i+1].y-pts[i].y);
+      if(acc+sl>=td){
+        const t_=(td-acc)/sl;
+        const cx=pts[i].x+(pts[i+1].x-pts[i].x)*t_,cy=pts[i].y+(pts[i+1].y-pts[i].y)*t_;
+        const ux=(pts[i+1].x-pts[i].x)/sl,uy=(pts[i+1].y-pts[i].y)/sl;
+        const sz=Math.max(6,w*2);
+        const tip={x:cx+ux*sz,y:cy+uy*sz},bl={x:cx-ux*sz*.6-uy*sz*.7,y:cy-uy*sz*.6+ux*sz*.7},br={x:cx-ux*sz*.6+uy*sz*.7,y:cy-uy*sz*.6-ux*sz*.7};
+        const ps=`${tip.x},${tip.y} ${bl.x},${bl.y} ${br.x},${br.y}`;
+        const o=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        o.setAttribute('points',ps);o.setAttribute('fill','#000a');o.setAttribute('stroke-width','0');
+        svg.appendChild(o);
+        const pg=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        pg.setAttribute('points',ps);pg.setAttribute('fill',col);pg.setAttribute('opacity','0.9');
+        svg.appendChild(pg);break;
+      }
+      acc+=sl;
+    }
+  }
+}
+
+function drawPipes(){
+  pSvg.innerHTML='';
+  document.querySelectorAll('.plen').forEach(e=>e.remove());
+  const juncs=buildTopo();
+  const isSel=p=>p.id===selPipe?.id;
+
+  pipes.forEach(pipe=>{
+    if(pipe.pts.length<2)return;
+    const isEx=pipe.status==='existing'||pipe.status==='damaged';
+    if(!lyr.ex&&isEx)return;
+    if(!lyr.pl&&!isEx)return;
+    const pxpts=pipe.pts.map(p=>ll2p(p[0],p[1]));
+    const col=pipeCol(pipe),dash=pipeDash(pipe),w=pipeW(pipe);
+    const op=selPipe&&!isSel(pipe)?0.28:1;
+    if(isSel(pipe)){const g=mkPath(pxpts,col,w+12,null,0.15);if(g)pSvg.appendChild(g);}
+    const body=mkPath(pxpts,col,w,dash,op);if(body)pSvg.appendChild(body);
+    // hit area
+    const hit=mkPath(pxpts,'transparent',Math.max(w+16,22),null,0);
+    if(hit){
+      hit.style.pointerEvents='stroke';
+      hit.addEventListener('mouseover',()=>{hit.style.cursor=tool==='pipe'?'crosshair':'pointer';});
+      hit.addEventListener('click',e=>{
+        e.stopPropagation();
+        if(tool==='select'){selectPipe(pipe);return;}
+        if(tool==='pipe'){
+          // Branch from pipe — click-point split, then start drawing
+          const rect=map.getContainer().getBoundingClientRect();
+          const cpx={x:e.clientX-rect.left,y:e.clientY-rect.top};
+          startBranchFromPipe(pipe,cpx);
+        }
+      });
+      pSvg.appendChild(hit);
+    }
+    if(op>0.4)drawArrows(pSvg,pxpts,col,w);
+    // ── selected pipe: draggable point handles ──
+    if(isSel(pipe)){
+      pipe.pts.forEach((pt,pi)=>{
+        const isEP=pi===0||pi===pipe.pts.length-1;
+        const px=ll2p(pt[0],pt[1]);
+        const h=mkCirc(px.x,px.y,isEP?8:5,'var(--sur)',isEP?col:'var(--bdr2)','2');
+        h.style.cursor='grab';h.style.pointerEvents='all';
+        h.addEventListener('mousedown',e=>{e.preventDefault();e.stopPropagation();pushH();startDrag('ppt',{pipe,ptIdx:pi,lat:pt[0],lng:pt[1]},e);});
+        // Right-click waypoint to delete it
+        if(!isEP){
+          h.addEventListener('contextmenu',e=>{
+            e.preventDefault();e.stopPropagation();
+            pushH();pipe.pts.splice(pi,1);pushToFB();drawPipes();
+          });
+        }
+        pSvg.appendChild(h);
+      });
+      // midpoint add-vertex ghosts
+      for(let i=0;i<pipe.pts.length-1;i++){
+        const a=ll2p(pipe.pts[i][0],pipe.pts[i][1]),b=ll2p(pipe.pts[i+1][0],pipe.pts[i+1][1]);
+        const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+        const mh=mkCirc(mx,my,4,'var(--sur3)','var(--bdr2)','1.5');
+        mh.setAttribute('opacity','0.8');mh.style.cursor='crosshair';mh.style.pointerEvents='all';
+        const si=i;
+        mh.addEventListener('mousedown',e=>{
+          e.preventDefault();e.stopPropagation();pushH();
+          const nl=p2ll(mx,my);pipe.pts.splice(si+1,0,nl);
+          startDrag('ppt',{pipe,ptIdx:si+1,lat:nl[0],lng:nl[1]},e);
+        });
+        pSvg.appendChild(mh);
+      }
+    }
+  });
+
+  // inferred junctions
+  juncs.forEach(j=>{
+    const px=ll2p(j.lat,j.lng);
+    const c=mkCirc(px.x,px.y,j.n>2?6:4,'var(--sur)','var(--bdr2)','1.5');
+    pSvg.appendChild(c);
+  });
+
+  // length labels
+  if(lyr.ln){
+    pipes.forEach(pipe=>{
+      if(pipe.pts.length<2)return;
+      const l=pipeLenM(pipe);if(l<5)return;
+      const mi=Math.floor(pipe.pts.length/2);
+      const px=ll2p(pipe.pts[mi][0],pipe.pts[mi][1]);
+      const el=document.createElement('div');
+      el.className='plen';el.style.left=px.x+'px';el.style.top=(px.y-12)+'px';
+      el.textContent=l>999?`${(l/1000).toFixed(2)}km`:`${l.toFixed(0)}m`;
+      document.getElementById('mw').appendChild(el);
+    });
+  }
+}
+
+function startBranchFromPipe(pipe,cpx){
+  // Find closest point on pipe in pixel space
+  let bestPt=null,bestD=Infinity,bestSeg=-1;
+  for(let i=0;i<pipe.pts.length-1;i++){
+    const a=ll2p(pipe.pts[i][0],pipe.pts[i][1]),b=ll2p(pipe.pts[i+1][0],pipe.pts[i+1][1]);
+    const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy;
+    let t=l2?((cpx.x-a.x)*dx+(cpx.y-a.y)*dy)/l2:0;
+    t=Math.max(0,Math.min(1,t));
+    const cx=a.x+t*dx,cy=a.y+t*dy;
+    const d=Math.hypot(cx-cpx.x,cy-cpx.y);
+    if(d<bestD){bestD=d;bestSeg=i;bestPt=p2ll(cx,cy);}
+  }
+  if(!bestPt||bestSeg<0)return;
+  // Snap to endpoint if close
+  const dStart=pixDist(cpx,ll2p(pipe.pts[0][0],pipe.pts[0][1]));
+  const dEnd=pixDist(cpx,ll2p(pipe.pts[pipe.pts.length-1][0],pipe.pts[pipe.pts.length-1][1]));
+  let branchPt;
+  if(dStart<22){branchPt=pipe.pts[0];}
+  else if(dEnd<22){branchPt=pipe.pts[pipe.pts.length-1];}
+  else{pushH();branchPt=splitPipe(pipe,bestSeg,bestPt);}
+  drawPts=[branchPt];ghostPt=branchPt;updateGhost();
+}
+
+// ── ZONE RENDERING ────────────────────────────────────────────────────
+function drawZones(){
+  zSvg.innerHTML='';vSvg.innerHTML='';
+  if(!lyr.zo)return;
+  zones.forEach(zone=>{
+    if(!zone.polygon||zone.polygon.length<3)return;
+    const pts=zone.polygon.map(p=>ll2p(p[0],p[1]));
+    const isSel=zone.id===selZone?.id;
+    const col=zone.color||'#4ade80';
+    const isTank=zone.type==='tank';
+
+    const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    poly.setAttribute('points',pts.map(p=>p.x+','+p.y).join(' '));
+    poly.setAttribute('fill',col);poly.setAttribute('fill-opacity',isSel?0.25:0.15);
+    poly.setAttribute('stroke',col);poly.setAttribute('stroke-width',isSel?2:1.5);
+    if(!isSel)poly.setAttribute('stroke-dasharray','6,4');
+    poly.style.cursor='pointer';poly.style.pointerEvents='all';
+    poly.addEventListener('click',e=>{e.stopPropagation();if(tool==='select')selectZone(zone);});
+    zSvg.appendChild(poly);
+
+    // label
+    const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length;
+    const cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+    const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x',cx);lbl.setAttribute('y',cy);
+    lbl.setAttribute('text-anchor','middle');lbl.setAttribute('dominant-baseline','middle');
+    lbl.setAttribute('fill',col);lbl.setAttribute('font-size','11');lbl.setAttribute('font-weight','bold');
+    lbl.setAttribute('font-family','-apple-system,sans-serif');lbl.setAttribute('pointer-events','none');
+    lbl.textContent=(isTank?'🏗 ':'')+zone.label;
+    zSvg.appendChild(lbl);
+
+    if(!isTank)drawTreeGrid(zSvg,zone,pts,col);
+    else drawTankFill(zSvg,pts,col,zone);
+
+    // vertex handles when selected
+    if(isSel){
+      zone.polygon.forEach((vtx,vi)=>{
+        const vx=ll2p(vtx[0],vtx[1]);
+        const ring=mkCirc(vx.x,vx.y,11,'none',col,'1.5');ring.setAttribute('opacity','0.35');vSvg.appendChild(ring);
+        const h=mkCirc(vx.x,vx.y,7,'var(--sur)',col,'2');
+        h.style.cursor='grab';h.style.pointerEvents='all';
+        h.addEventListener('mousedown',e=>{e.preventDefault();e.stopPropagation();pushH();startDrag('zvtx',{zone,vtxIdx:vi,lat:vtx[0],lng:vtx[1]},e);});
+        h.addEventListener('dblclick',e=>{e.preventDefault();e.stopPropagation();if(zone.polygon.length>3){pushH();zone.polygon.splice(vi,1);pushToFB();redraw();}});
+        vSvg.appendChild(h);
+        // midpoint add-vertex
+        const nxt=zone.polygon[(vi+1)%zone.polygon.length];
+        const nx=ll2p(nxt[0],nxt[1]);const mx=(vx.x+nx.x)/2,my=(vx.y+nx.y)/2;
+        const mh=mkCirc(mx,my,4,'var(--sur3)',col,'1.5');
+        mh.setAttribute('opacity','0.7');mh.style.cursor='crosshair';mh.style.pointerEvents='all';
+        mh.addEventListener('mousedown',e=>{
+          e.preventDefault();e.stopPropagation();pushH();
+          const nl=p2ll(mx,my);zone.polygon.splice(vi+1,0,nl);
+          startDrag('zvtx',{zone,vtxIdx:vi+1,lat:nl[0],lng:nl[1]},e);
+        });
+        vSvg.appendChild(mh);
+      });
+    }
+  });
+  // Draw proposed sub-main → main pipe connections for all zones
+  drawZoneConnections();
+}
+
+function drawTreeGrid(svg,zone,pxPts,col){
+  if(!zone.rowSpacingM||!zone.treeSpacingM)return;
+
+  const angleDeg=zone.rowAngleDeg??15;
+  const rowScreenRad=(-90-angleDeg)*Math.PI/180;
+  const perpScreenRad=rowScreenRad+Math.PI/2;
+  const rux=Math.cos(rowScreenRad),ruy=Math.sin(rowScreenRad);
+  const pux=Math.cos(perpScreenRad),puy=Math.sin(perpScreenRad);
+
+  const ref=zone.polygon[0];
+  const refPx=ll2p(ref[0],ref[1]);
+  const refR=ll2p(ref[0],ref[1]+0.001),refD=ll2p(ref[0]+0.001,ref[1]);
+  if(Math.abs(refR.x-refPx.x)<0.01||Math.abs(refD.y-refPx.y)<0.01)return;
+  const mPerPx=(
+    hav(ref,[ref[0],ref[1]+0.001])/Math.abs(refR.x-refPx.x)+
+    hav(ref,[ref[0]+0.001,ref[1]])/Math.abs(refD.y-refPx.y)
+  )/2;
+  const rowStepPx=zone.treeSpacingM/mPerPx;
+  const perpStepPx=zone.rowSpacingM/mPerPx;
+  if(rowStepPx<4||perpStepPx<4||rowStepPx>500||perpStepPx>500)return;
+
+  const cx=pxPts.reduce((a,p)=>a+p.x,0)/pxPts.length;
+  const cy=pxPts.reduce((a,p)=>a+p.y,0)/pxPts.length;
+  const diagLen=Math.hypot(
+    Math.max(...pxPts.map(p=>p.x))-Math.min(...pxPts.map(p=>p.x)),
+    Math.max(...pxPts.map(p=>p.y))-Math.min(...pxPts.map(p=>p.y))
+  )*0.8;
+
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.setAttribute('pointer-events','none');
+
+  const maxSteps=Math.ceil(diagLen/Math.min(rowStepPx,perpStepPx))+2;
+  let dotCount=0;
+  const rowPts={};
+
+  for(let ri=-maxSteps;ri<=maxSteps;ri++){
+    for(let ti=-maxSteps;ti<=maxSteps;ti++){
+      const sx=cx+ti*rowStepPx*rux+ri*perpStepPx*pux;
+      const sy=cy+ti*rowStepPx*ruy+ri*perpStepPx*puy;
+      if(!ptInPolyPx({x:sx,y:sy},pxPts))continue;
+      dotCount++;
+      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+      c.setAttribute('cx',sx.toFixed(1));c.setAttribute('cy',sy.toFixed(1));
+      c.setAttribute('r','2');c.setAttribute('fill',col);c.setAttribute('opacity','0.6');
+      g.appendChild(c);
+      if(!rowPts[ri])rowPts[ri]=[];
+      rowPts[ri].push({x:sx,y:sy});
+    }
+  }
+
+  // ── Slope-aware pipe layout ──────────────────────────────────────────
+  // Slope data is stored on zone._slope (%), zone._aspect (deg from N, downhill direction).
+  // If no slope data yet, fall back to simple flat layout.
+  const slopePct=zone._slope||0;
+  const aspectDeg=zone._aspect??null; // null = unknown/flat
+
+  // Slope correction factor for pipe lengths: actual pipe > horizontal distance
+  const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
+
+  // Determine which end of each lateral is "uphill" (where sub-main connects).
+  // Uphill end = whichever lateral endpoint projects further in the uphill direction.
+  // Uphill direction in screen space = aspect (downhill) + 180°.
+  let aspectScreenRad=null;
+  let uphillX=0,uphillY=-1; // default: uphill = north (screen up)
+  if(aspectDeg!==null&&slopePct>1){
+    const uphillDeg=(aspectDeg+180)%360;
+    aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
+    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
+  }
+
+  // ── Flat vs sloped layout decision ──────────────────────────────────
+  // Flat (slope < 2%): sub-main runs down the CENTER of the zone.
+  //   Each lateral splits into two halves — left and right of sub-main.
+  //   This halves total lateral pipe vs side-entry.
+  // Sloped (slope ≥ 2%): sub-main at the UPHILL end of each lateral.
+  const isFlat=slopePct<2;
+
+  // Build lateral endpoints for each row
+  const laterals=[];
+  let totalLateralPx=0;
+  let minRowProj=Infinity,maxRowProj=-Infinity;
+
+  Object.entries(rowPts).forEach(([riStr,pts])=>{
+    if(!pts.length)return;
+    pts.sort((a,b)=>(a.x*rux+a.y*ruy)-(b.x*rux+b.y*ruy));
+    const start=pts[0],end=pts[pts.length-1];
+    const spanPx=pts.length>=2?Math.hypot(end.x-start.x,end.y-start.y):0;
+    const lateralPx=spanPx+rowStepPx;
+    totalLateralPx+=lateralPx;
+    const extStart={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
+    const extEnd  ={x:end.x  +rux*rowStepPx*0.5,y:end.y  +ruy*rowStepPx*0.5};
+    const s=ptInPolyPx(extStart,pxPts)?extStart:start;
+    const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
+
+    let smEnd,smMid=null;
+    if(isFlat){
+      // Flat: sub-main connects at midpoint of each lateral
+      smMid={x:(s.x+e.x)/2,y:(s.y+e.y)/2};
+      smEnd=smMid;
+    } else {
+      // Sloped: sub-main at the uphill end
+      const sProjUp=s.x*uphillX+s.y*uphillY;
+      const eProjUp=e.x*uphillX+e.y*uphillY;
+      smEnd=sProjUp>eProjUp?s:e;
+    }
+    const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
+    const proj=midX*pux+midY*puy;
+    if(proj<minRowProj)minRowProj=proj;
+    if(proj>maxRowProj)maxRowProj=proj;
+    laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
+  });
+
+  // Draw tree dots
+  svg.appendChild(g);
+
+  // Draw laterals (20mm drip lines)
+  laterals.forEach(lat=>{
+    if(lat.pts.length<1)return;
+    if(lat.isFlat&&lat.smMid){
+      // Two half-laterals from midpoint outward
+      const drawHalf=(from,to,col_)=>{
+        const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1',from.x.toFixed(1));line.setAttribute('y1',from.y.toFixed(1));
+        line.setAttribute('x2',to.x.toFixed(1));line.setAttribute('y2',to.y.toFixed(1));
+        line.setAttribute('stroke',col_);line.setAttribute('stroke-width','1.5');
+        line.setAttribute('opacity','0.55');line.setAttribute('pointer-events','none');
+        svg.appendChild(line);
+        // Flow arrow at 60% along
+        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len<8)return;
+        const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
+        const ax=from.x+ux*len*0.6,ay=from.y+uy*len*0.6;
+        const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
+        arr.setAttribute('fill',col_);arr.setAttribute('opacity','0.7');arr.setAttribute('pointer-events','none');
+        svg.appendChild(arr);
+      };
+      drawHalf(lat.smMid,lat.s,col);
+      drawHalf(lat.smMid,lat.e,col);
+    } else {
+      // Single lateral from sub-main end to far end
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',lat.s.x.toFixed(1));line.setAttribute('y1',lat.s.y.toFixed(1));
+      line.setAttribute('x2',lat.e.x.toFixed(1));line.setAttribute('y2',lat.e.y.toFixed(1));
+      line.setAttribute('stroke',col);line.setAttribute('stroke-width','1.5');
+      line.setAttribute('opacity','0.55');line.setAttribute('pointer-events','none');
+      svg.appendChild(line);
+      // Flow arrow at 40% from sub-main end
+      if(lat.pts.length>=2){
+        const from=lat.smEnd===lat.s?lat.s:lat.e;
+        const to  =lat.smEnd===lat.s?lat.e:lat.s;
+        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len>4){
+          const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
+          const ax=from.x+ux*len*0.4,ay=from.y+uy*len*0.4;
+          const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+          arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
+          arr.setAttribute('fill',col);arr.setAttribute('opacity','0.7');arr.setAttribute('pointer-events','none');
+          svg.appendChild(arr);
+        }
+      }
+    }
+  });
+
+  // ── Sub-main line ────────────────────────────────────────────────────
+  // Runs through all lateral sub-main connection points.
+  // Sort by projection onto perpendicular axis (row-to-row direction).
+  const smPts=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
+
+  if(smPts.length>=2){
+    // Draw sub-main path connecting all lateral inlet points
+    const smPath=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    smPath.setAttribute('points',smPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+    smPath.setAttribute('stroke','#ffffff');smPath.setAttribute('stroke-width','3');
+    smPath.setAttribute('fill','none');smPath.setAttribute('opacity','0.85');
+    smPath.setAttribute('stroke-linecap','round');smPath.setAttribute('stroke-linejoin','round');
+    smPath.setAttribute('pointer-events','none');
+    svg.appendChild(smPath);
+    // Colored overlay on sub-main
+    const smPath2=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    smPath2.setAttribute('points',smPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+    smPath2.setAttribute('stroke','#00cfff');smPath2.setAttribute('stroke-width','1.5');
+    smPath2.setAttribute('fill','none');smPath2.setAttribute('opacity','0.9');
+    smPath2.setAttribute('stroke-linecap','round');smPath2.setAttribute('stroke-linejoin','round');
+    smPath2.setAttribute('pointer-events','none');
+    svg.appendChild(smPath2);
+    // Sub-main flow arrows
+    for(let i=0;i<smPts.length-1;i++){
+      const a=smPts[i],b=smPts[i+1];
+      const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+      const len=Math.hypot(b.x-a.x,b.y-a.y);if(len<8)continue;
+      const ux=(b.x-a.x)/len,uy=(b.y-a.y)/len;
+      const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+      arr.setAttribute('points',`${mx+ux*5},${my+uy*5} ${mx-ux*4-uy*4},${my-uy*4+ux*4} ${mx-ux*4+uy*4},${my-uy*4-ux*4}`);
+      arr.setAttribute('fill','#00cfff');arr.setAttribute('opacity','0.9');arr.setAttribute('pointer-events','none');
+      svg.appendChild(arr);
+    }
+  }
+
+  // ── Slope info label (if elevation data available) ───────────────────
+  if(slopePct>0){
+    const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+    slbl.setAttribute('x',cx);slbl.setAttribute('y',cy+14);
+    slbl.setAttribute('text-anchor','middle');slbl.setAttribute('fill','#facc15');
+    slbl.setAttribute('font-size','9');slbl.setAttribute('font-family','-apple-system,sans-serif');
+    slbl.setAttribute('pointer-events','none');slbl.setAttribute('opacity','0.9');
+    const aspectName=aspectDeg!==null?compassDir(aspectDeg):'';
+    slbl.textContent=`${slopePct.toFixed(1)}% slope${aspectName?' ↓'+aspectName:''}`;
+    svg.appendChild(slbl);
+    if(slopePct>5){
+      const warn=document.createElementNS('http://www.w3.org/2000/svg','text');
+      warn.setAttribute('x',cx);warn.setAttribute('y',cy+24);
+      warn.setAttribute('text-anchor','middle');warn.setAttribute('fill','#f87171');
+      warn.setAttribute('font-size','8');warn.setAttribute('font-family','-apple-system,sans-serif');
+      warn.setAttribute('pointer-events','none');
+      warn.textContent='⚠ PC emitters recommended';
+      svg.appendChild(warn);
+    }
+  }
+
+  // ── Elevation query button (if no slope data yet) ────────────────────
+  if(zone._slope==null&&!zone._elevQuerying){
+    const msg=zone._elevError||'Click to fetch slope data';
+    const col=zone._elevError?'#f87171':'#60a5fa';
+    const btn=document.createElementNS('http://www.w3.org/2000/svg','text');
+    btn.setAttribute('x',cx);btn.setAttribute('y',cy+14);
+    btn.setAttribute('text-anchor','middle');btn.setAttribute('fill',col);
+    btn.setAttribute('font-size','9');btn.setAttribute('font-family','-apple-system,sans-serif');
+    btn.setAttribute('cursor','pointer');btn.setAttribute('opacity','0.9');
+    btn.textContent=zone._elevError?`⚠ ${msg} — click to retry`:`⊕ ${msg}`;
+    btn.addEventListener('click',e=>{e.stopPropagation();fetchZoneElevation(zone);});
+    svg.appendChild(btn);
+  } else if(zone._elevQuerying){
+    const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x',cx);lbl.setAttribute('y',cy+14);
+    lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#94a3b8');
+    lbl.setAttribute('font-size','9');lbl.setAttribute('font-family','-apple-system,sans-serif');
+    lbl.setAttribute('pointer-events','none');
+    lbl.textContent='Fetching elevation…';
+    svg.appendChild(lbl);
+  }
+
+  // ── Store computed values ─────────────────────────────────────────────
+  const subMainPx=(maxRowProj-minRowProj)+perpStepPx;
+  const rowCount=Object.keys(rowPts).filter(k=>rowPts[k].length>0).length;
+  zone._treeCount=dotCount;
+  zone._rowCount=rowCount;
+  zone._emitterCount=dotCount*(zone.emitters||2);
+  zone._lateralM=totalLateralPx*mPerPx*slopeCorr;
+  zone._subMainM=Math.max(0,subMainPx*mPerPx*slopeCorr);
+
+  // ── Zone split suggestion ─────────────────────────────────────────────
+  // Max allowable head loss per lateral = 2m (conservative, suits non-PC emitters).
+  // If slope > 0: max lateral length before >2m head variation = 200/slope%.
+  // If any lateral in the zone exceeds this, recommend a split.
+  // Split line runs contour-parallel (perpendicular to slope direction),
+  // positioned to divide the zone into equal-pressure bands.
+  if(slopePct>0.5&&laterals.length>=2){
+    const maxLateralM=200/slopePct; // metres
+    const maxLateralPx=maxLateralM/mPerPx;
+    const longestLateralPx=Math.max(...laterals.map(l=>
+      Math.hypot(l.e.x-l.s.x,l.e.y-l.s.y)));
+
+    if(longestLateralPx>maxLateralPx){
+      // How many bands are needed?
+      const nBands=Math.ceil(longestLateralPx/maxLateralPx);
+      // Draw nBands-1 split lines across the zone at equal row-spacing intervals
+      // Split lines run parallel to the row direction (along contour lines)
+      const sortedLats=laterals.sort((a,b)=>{
+        const pa=(a.s.x+a.e.x)/2*pux+(a.s.y+a.e.y)/2*puy;
+        const pb=(b.s.x+b.e.x)/2*pux+(b.s.y+b.e.y)/2*puy;
+        return pa-pb;
+      });
+      const totalRows=sortedLats.length;
+      for(let band=1;band<nBands;band++){
+        const splitIdx=Math.round(totalRows*band/nBands);
+        if(splitIdx<=0||splitIdx>=totalRows)continue;
+        const latA=sortedLats[splitIdx-1],latB=sortedLats[splitIdx];
+        // Midpoint between two adjacent rows at the split boundary
+        const midAx=(latA.s.x+latA.e.x)/2,midAy=(latA.s.y+latA.e.y)/2;
+        const midBx=(latB.s.x+latB.e.x)/2,midBy=(latB.s.y+latB.e.y)/2;
+        const splitCx=(midAx+midBx)/2,splitCy=(midAy+midBy)/2;
+        // Draw split line through the centroid in the row direction
+        // extended to cover the full zone width
+        const halfLen=diagLen*1.2;
+        const lx1=splitCx-rux*halfLen,ly1=splitCy-ruy*halfLen;
+        const lx2=splitCx+rux*halfLen,ly2=splitCy+ruy*halfLen;
+        // Clip to zone bounding box
+        const sl=document.createElementNS('http://www.w3.org/2000/svg','line');
+        sl.setAttribute('x1',lx1.toFixed(1));sl.setAttribute('y1',ly1.toFixed(1));
+        sl.setAttribute('x2',lx2.toFixed(1));sl.setAttribute('y2',ly2.toFixed(1));
+        sl.setAttribute('stroke','#facc15');sl.setAttribute('stroke-width','2');
+        sl.setAttribute('stroke-dasharray','8,4');sl.setAttribute('opacity','0.9');
+        sl.setAttribute('pointer-events','none');
+        svg.appendChild(sl);
+        // Label for the split band
+        const bandLbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+        bandLbl.setAttribute('x',splitCx.toFixed(1));
+        bandLbl.setAttribute('y',(splitCy-6).toFixed(1));
+        bandLbl.setAttribute('text-anchor','middle');bandLbl.setAttribute('fill','#facc15');
+        bandLbl.setAttribute('font-size','8');bandLbl.setAttribute('font-family','-apple-system,sans-serif');
+        bandLbl.setAttribute('pointer-events','none');bandLbl.setAttribute('opacity','0.95');
+        bandLbl.textContent=`✂ Split ${band}/${nBands-1} — separate pressure zone`;
+        svg.appendChild(bandLbl);
+      }
+      // Overall warning label
+      zone._splitNeeded=nBands;
+      if(!zone._elevQuerying){
+        const warn2=document.createElementNS('http://www.w3.org/2000/svg','text');
+        warn2.setAttribute('x',cx.toFixed(1));warn2.setAttribute('y',(cy+34).toFixed(1));
+        warn2.setAttribute('text-anchor','middle');warn2.setAttribute('fill','#facc15');
+        warn2.setAttribute('font-size','8');warn2.setAttribute('font-family','-apple-system,sans-serif');
+        warn2.setAttribute('pointer-events','none');warn2.setAttribute('opacity','0.95');
+        warn2.textContent=`⚠ Split into ${nBands} pressure zones (max lateral ${maxLateralM.toFixed(0)}m at ${slopePct}% slope)`;
+        svg.appendChild(warn2);
+      }
+    } else {
+      zone._splitNeeded=null;
+    }
+  } else {
+    zone._splitNeeded=null;
+  }
+
+  // ── Sub-main inlet point (lat/lng) ───────────────────────────────────
+  // The inlet is ALWAYS the uphill end — water enters from above.
+  // Uphill = the smPts end whose lat/lng has higher elevation proxy.
+  // Without elevation data we use the aspect direction to determine which
+  // end of the smPts array is uphill.
+  if(smPts.length>=1){
+    const smFirst=smPts[0],smLast=smPts[smPts.length-1];
+    let inletPx,outletPx;
+    if(aspectScreenRad!==null&&slopePct>1){
+      // aspectScreenRad is downhill direction in screen space.
+      // Uphill = opposite direction.
+      const uphillRad=aspectScreenRad+Math.PI;
+      const uphillX=Math.cos(uphillRad),uphillY=Math.sin(uphillRad);
+      // Whichever smPts end projects further in uphill direction = the inlet
+      const projFirst=smFirst.x*uphillX+smFirst.y*uphillY;
+      const projLast =smLast.x *uphillX+smLast.y *uphillY;
+      inletPx =projFirst>projLast?smFirst:smLast;
+      outletPx=projFirst>projLast?smLast:smFirst;
+    } else {
+      // No slope data — default inlet at smPts[0] (arbitrary, user can tell from context)
+      inletPx=smFirst;outletPx=smLast;
+    }
+    zone._smInletLL=p2ll(inletPx.x,inletPx.y);
+    zone._smOutletLL=p2ll(outletPx.x,outletPx.y);
+    zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
+    zone._aspectScreenRad=aspectScreenRad;
+    zone._slopePct=slopePct;
+  }
+}
+
+// ── ZONE-TO-MAIN-PIPE CONNECTIONS ─────────────────────────────────────
+// For each crop zone:
+// 1. Check if any main pipe (3″+) passes within 2×rowSpacingM of ANY lateral's
+//    sub-main connection point — if so, that pipe serves directly (no sub-main).
+// 2. Otherwise connect sub-main inlet to nearest main pipe.
+function drawZoneConnections(){
+  if(!lyr.zo)return;
+  const mainDias=['3','4','5'];
+  const maxSearchM=400;
+  zones.forEach(zone=>{
+    if(zone.type==='tank')return;
+    if(!zone._smInletLL)return;
+    const rowSpM=zone.rowSpacingM||7;
+    const mainPipes=pipes.filter(p=>mainDias.includes(p.dia)&&p.pts.length>=2&&p.status!=='damaged');
+    if(!mainPipes.length)return;
+    // Convert lat/lng to pixels NOW at current zoom — never use stored pixel coords
+    const inletPx=ll2p(zone._smInletLL[0],zone._smInletLL[1]);
+    const smEndLLs=zone._smEndLLs||[zone._smInletLL];
+    const slopePct=zone._slopePct||0;
+    const aspectScreenRad=zone._aspectScreenRad??null;
+    // Check all lateral connection points for direct main pipe proximity
+    let directPipe=null,directConnPt=null,directDist=Infinity;
+    smEndLLs.forEach(smLL=>{
+      mainPipes.forEach(pipe=>{
+        for(let i=0;i<pipe.pts.length-1;i++){
+          const cp=closestOnSeg(smLL,pipe.pts[i],pipe.pts[i+1]);
+          if(cp.d<directDist&&cp.d<rowSpM*2){directDist=cp.d;directConnPt=cp.pt;directPipe=pipe;}
+        }
+      });
+    });
+    if(directPipe){
+      zone._connMode='direct';zone._connDist=Math.round(directDist);zone._connDia=directPipe.dia;
+      const connPx=ll2p(directConnPt[0],directConnPt[1]);
+      const tick=mkCirc(connPx.x,connPx.y,6,'#4ade80','#fff','1.5');
+      tick.setAttribute('pointer-events','none');pSvg.appendChild(tick);
+      const tlbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+      tlbl.setAttribute('x',(connPx.x+10).toFixed(1));tlbl.setAttribute('y',(connPx.y-5).toFixed(1));
+      tlbl.setAttribute('fill','#4ade80');tlbl.setAttribute('font-size','8');
+      tlbl.setAttribute('font-family','-apple-system,sans-serif');tlbl.setAttribute('pointer-events','none');
+      tlbl.textContent=`✓ Direct from ${directPipe.dia}″`;
+      pSvg.appendChild(tlbl);return;
+    }
+    // Feeder needed — find nearest main pipe to inlet
+    let bestDist=Infinity,bestConnPt=null,bestPipe=null;
+    mainPipes.forEach(pipe=>{
+      for(let i=0;i<pipe.pts.length-1;i++){
+        const cp=closestOnSeg(zone._smInletLL,pipe.pts[i],pipe.pts[i+1]);
+        if(cp.d<bestDist&&cp.d<maxSearchM){bestDist=cp.d;bestConnPt=cp.pt;bestPipe=pipe;}
+      }
+    });
+    if(!bestPipe)return;
+    const connPx=ll2p(bestConnPt[0],bestConnPt[1]);
+    // Route uphill then across if sloped, straight if flat
+    let routePts=[inletPx,connPx];
+    if(aspectScreenRad!==null&&slopePct>2){
+      const ur=aspectScreenRad+Math.PI;
+      const ux=Math.cos(ur),uy=Math.sin(ur);
+      const dx=connPx.x-inletPx.x,dy=connPx.y-inletPx.y;
+      const tUp=dx*ux+dy*uy;
+      const elbow={x:inletPx.x+ux*tUp,y:inletPx.y+uy*tUp};
+      if(Math.hypot(elbow.x-(inletPx.x+connPx.x)/2,elbow.y-(inletPx.y+connPx.y)/2)>15)
+        routePts=[inletPx,elbow,connPx];
+    }
+    // Draw into pSvg (above zones, z-index 410) so clicks work
+    const rp=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    rp.setAttribute('points',routePts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+    rp.setAttribute('stroke','#fb923c');rp.setAttribute('stroke-width','2');
+    rp.setAttribute('stroke-dasharray','7,3');rp.setAttribute('fill','none');
+    rp.setAttribute('opacity','0.9');rp.setAttribute('pointer-events','none');
+    pSvg.appendChild(rp);
+    const d1=mkCirc(inletPx.x,inletPx.y,5,'#fb923c','#fff','1.5');
+    d1.setAttribute('pointer-events','none');pSvg.appendChild(d1);
+    const d2=mkCirc(connPx.x,connPx.y,5,'none','#fb923c','2');
+    d2.setAttribute('pointer-events','none');pSvg.appendChild(d2);
+    const mid=routePts[Math.floor(routePts.length/2)];
+    const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+    lbl.setAttribute('x',mid.x.toFixed(1));lbl.setAttribute('y',(mid.y-7).toFixed(1));
+    lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#fb923c');
+    lbl.setAttribute('font-size','9');lbl.setAttribute('font-weight','bold');
+    lbl.setAttribute('font-family','-apple-system,sans-serif');
+    lbl.setAttribute('pointer-events','all');lbl.style.cursor='pointer';
+    lbl.textContent=`→ ${bestPipe.dia}″ · ${bestDist.toFixed(0)}m feeder`;
+    lbl.addEventListener('click',e=>{
+      e.stopPropagation();setTool('pipe');setPSt('planned');
+      drawPts=[zone._smInletLL];
+      if(routePts.length===3)drawPts.push(p2ll(routePts[1].x,routePts[1].y));
+      drawPts.push([...bestConnPt]);ghostPt=bestConnPt;updateGhost();
+    });
+    pSvg.appendChild(lbl);
+    zone._connMode='feeder';zone._connDist=Math.round(bestDist);zone._connDia=bestPipe.dia;
+  });
+}
+
+function compassDir(deg){
+  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5)%16];
+}
+window.compassDir=compassDir;
+
+// ── ELEVATION QUERY ───────────────────────────────────────────────────
+// Uses Open-Topo-Data SRTM 30m API (free, no key needed).
+// Queries a grid of points inside the zone polygon, fits a slope plane,
+// computes slope % and aspect direction.
+async function fetchZoneElevation(zone){
+  if(!zone||zone._elevQuerying)return;
+  zone._elevQuerying=true;
+  zone._elevError=null;
+  redraw();
+
+  try{
+    const poly=zone.polygon;
+    const latMin=Math.min(...poly.map(p=>p[0])),latMax=Math.max(...poly.map(p=>p[0]));
+    const lngMin=Math.min(...poly.map(p=>p[1])),lngMax=Math.max(...poly.map(p=>p[1]));
+    const gridN=5; // 5×5 = 25 points max
+    const pts=[];
+    // Always include polygon corners
+    poly.forEach(p=>pts.push([p[0],p[1]]));
+    // Add interior grid points
+    for(let i=0;i<=gridN;i++){
+      for(let j=0;j<=gridN;j++){
+        const lat=latMin+(latMax-latMin)*i/gridN;
+        const lng=lngMin+(lngMax-lngMin)*j/gridN;
+        if(ptInPolyLL([lat,lng],poly))pts.push([lat,lng]);
+      }
+    }
+    // Deduplicate and limit to 100
+    const uniq=pts.slice(0,99);
+    if(uniq.length<3){
+      zone._elevQuerying=false;
+      zone._elevError='Zone too small for elevation query';
+      redraw();return;
+    }
+
+    // Open-Meteo elevation API — free, no key needed, CORS enabled for browser use.
+    // The previous API (opentopodata.org) has no CORS headers, blocking browser requests.
+    const lats=uniq.map(p=>p[0].toFixed(6)).join(',');
+    const lngs=uniq.map(p=>p[1].toFixed(6)).join(',');
+    const url=`https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lngs}`;
+    let res;
+    try{res=await fetch(url);}
+    catch(fetchErr){throw new Error('Network error: '+fetchErr.message);}
+    if(!res.ok)throw new Error(`Elevation API ${res.status}: ${res.statusText}`);
+    const data=await res.json();
+    if(!data.elevation||!Array.isArray(data.elevation))
+      throw new Error('Unexpected API response: '+(data.reason||JSON.stringify(data).slice(0,80)));
+
+    const elevPts=data.elevation
+      .map((elev,i)=>({lat:uniq[i][0],lng:uniq[i][1],elev}))
+      .filter(p=>p.elev!=null&&!isNaN(p.elev));
+    if(elevPts.length<3)throw new Error('Not enough valid elevation points returned');
+
+    // Fit plane z = a*lat + b*lng + c (least squares)
+    const n=elevPts.length;
+    let sLat=0,sLng=0,sE=0,sLat2=0,sLng2=0,sLatLng=0,sLatE=0,sLngE=0;
+    elevPts.forEach(p=>{
+      sLat+=p.lat;sLng+=p.lng;sE+=p.elev;
+      sLat2+=p.lat**2;sLng2+=p.lng**2;sLatLng+=p.lat*p.lng;
+      sLatE+=p.lat*p.elev;sLngE+=p.lng*p.elev;
+    });
+    const A=[[sLat2,sLatLng,sLat],[sLatLng,sLng2,sLng],[sLat,sLng,n]];
+    const B=[sLatE,sLngE,sE];
+    const coeffs=solveLinear3(A,B);
+    if(!coeffs){throw new Error('Could not fit slope plane to elevation data');}
+    const [a,b]=coeffs;
+
+    const cosLat=Math.cos((latMin+latMax)/2*Math.PI/180);
+    const dzdx=b/(111320*cosLat);
+    const dzdy=a/111320;
+    const slopePct=Math.sqrt(dzdx**2+dzdy**2)*100;
+    const aspectRad=Math.atan2(-dzdx,-dzdy);
+    const aspectDeg=(aspectRad*180/Math.PI+360)%360;
+    const elevArr=elevPts.map(p=>p.elev);
+    const elevRange=Math.max(...elevArr)-Math.min(...elevArr);
+
+    zone._slope=Math.round(slopePct*10)/10;
+    zone._aspect=Math.round(aspectDeg);
+    zone._elevRange=Math.round(elevRange*10)/10;
+    zone._elevQuerying=false;
+    zone._elevError=null;
+    pushToFB();
+    redraw();
+    // Refresh card if open
+    if(selZone?.id===zone.id)showZoneCard(zone);
+  }catch(err){
+    console.warn('Elevation query failed:',err.message);
+    zone._elevQuerying=false;
+    zone._elevError=err.message;
+    redraw();
+    if(selZone?.id===zone.id)showZoneCard(zone);
+  }
+}
+window.fetchZoneElevation=fetchZoneElevation;
+
+function ptInPolyLL(pt,polygon){
+  // Ray-casting in lat/lng space
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    if(((polygon[i][0]>pt[0])!==(polygon[j][0]>pt[0]))&&
+       (pt[1]<(polygon[j][1]-polygon[i][1])*(pt[0]-polygon[i][0])/(polygon[j][0]-polygon[i][0])+polygon[i][1]))
+      inside=!inside;
+  }
+  return inside;
+}
+
+function solveLinear3(A,B){
+  // Gaussian elimination for 3×3 system Ax=B
+  const M=A.map((row,i)=>[...row,B[i]]);
+  for(let col=0;col<3;col++){
+    let maxRow=col;
+    for(let row=col+1;row<3;row++)if(Math.abs(M[row][col])>Math.abs(M[maxRow][col]))maxRow=row;
+    [M[col],M[maxRow]]=[M[maxRow],M[col]];
+    if(Math.abs(M[col][col])<1e-12)return null;
+    for(let row=col+1;row<3;row++){
+      const f=M[row][col]/M[col][col];
+      for(let k=col;k<=3;k++)M[row][k]-=f*M[col][k];
+    }
+  }
+  const x=[0,0,0];
+  for(let i=2;i>=0;i--){
+    x[i]=M[i][3];
+    for(let j=i+1;j<3;j++)x[i]-=M[i][j]*x[j];
+    x[i]/=M[i][i];
+  }
+  return x;
+}
+
+function drawTankFill(svg,pts,col,zone){
+  // Use fillPct if available, fall back to waterLevel/maxDepth
+  const fillPct=zone.fillPct!=null
+    ?zone.fillPct
+    :(zone.maxDepth&&zone.waterLevel!=null?Math.round(zone.waterLevel/zone.maxDepth*100):0);
+  const frac=Math.min(1,Math.max(0,fillPct/100));
+  if(frac<=0)return;
+
+  const minY=Math.min(...pts.map(p=>p.y)),maxY=Math.max(...pts.map(p=>p.y));
+  const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length;
+  const fillY=maxY-(maxY-minY)*frac;
+
+  // Clip fill to polygon shape
+  const clipId='clip_'+Math.random().toString(36).slice(2,7);
+  const defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const cp=document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+  cp.setAttribute('id',clipId);
+  const cpoly=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  cpoly.setAttribute('points',pts.map(p=>p.x+','+p.y).join(' '));
+  cp.appendChild(cpoly);defs.appendChild(cp);svg.appendChild(defs);
+
+  const minX=Math.min(...pts.map(p=>p.x))-5,maxX=Math.max(...pts.map(p=>p.x))+5;
+
+  // Water fill body
+  const fill=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  fill.setAttribute('x',minX);fill.setAttribute('y',fillY);
+  fill.setAttribute('width',maxX-minX);fill.setAttribute('height',maxY-fillY+10);
+  fill.setAttribute('fill','#58a6ff');fill.setAttribute('fill-opacity','0.28');
+  fill.setAttribute('clip-path',`url(#${clipId})`);
+  svg.appendChild(fill);
+
+  // Waterline
+  const wline=document.createElementNS('http://www.w3.org/2000/svg','line');
+  wline.setAttribute('x1',minX);wline.setAttribute('y1',fillY);
+  wline.setAttribute('x2',maxX);wline.setAttribute('y2',fillY);
+  wline.setAttribute('stroke','#58a6ff');wline.setAttribute('stroke-width','1.5');
+  wline.setAttribute('stroke-dasharray','4,3');wline.setAttribute('opacity','0.7');
+  wline.setAttribute('clip-path',`url(#${clipId})`);
+  svg.appendChild(wline);
+
+  // Percentage label at waterline
+  const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+  lbl.setAttribute('x',cx);lbl.setAttribute('y',fillY-5);
+  lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#58a6ff');
+  lbl.setAttribute('font-size','10');lbl.setAttribute('font-weight','bold');
+  lbl.setAttribute('font-family','-apple-system,sans-serif');
+  lbl.setAttribute('pointer-events','none');
+  lbl.textContent=`${fillPct}%`;
+  svg.appendChild(lbl);
+}
+
+function ptInPolyPx(pt,polygon){
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    if(((polygon[i].y>pt.y)!==(polygon[j].y>pt.y))&&
+       (pt.x<(polygon[j].x-polygon[i].x)*(pt.y-polygon[i].y)/(polygon[j].y-polygon[i].y)+polygon[i].x))
+      inside=!inside;
+  }
+  return inside;
+}
+
+// ── NODE RENDERING ────────────────────────────────────────────────────
+function drawNodes(){
+  const layer=document.getElementById('node-layer');
+  layer.innerHTML='';
+  nodes.forEach(nd=>{
+    const px=ll2p(nd.lat,nd.lng);
+    const sz=NSZ[nd.type]||24,col=NCOL[nd.type]||'#888';
+    const isSel=nd.id===selNode?.id;
+    const div=document.createElement('div');
+    div.style.cssText=`position:absolute;left:${px.x}px;top:${px.y}px;transform:translate(-50%,-50%);z-index:450;pointer-events:all;cursor:${tool==='select'?'grab':'crosshair'}`;
+    const pumpOnOff=nd.type==='pump'?`<div style="position:absolute;top:-8px;right:-8px;width:14px;height:14px;border-radius:50%;background:${nd.on?'var(--ok)':'var(--bdr2)'};border:1.5px solid var(--sur);font-size:7px;display:flex;align-items:center;justify-content:center;color:${nd.on?'#0d1117':'var(--tx3)'}">${nd.on?'▶':'■'}</div>`:'';
+    const elevLbl=lyr.el&&nd.elev!=null?`<div style="position:absolute;bottom:calc(100% + 2px);left:50%;transform:translateX(-50%);font-size:8px;color:var(--warn);white-space:nowrap;background:#0009;padding:1px 3px;border-radius:2px;pointer-events:none">${nd.elev}m</div>`:'';
+    div.innerHTML=`<div style="position:relative;width:${sz}px;height:${sz}px;border-radius:50%;border:${isSel?'3px':'2.5px'} solid ${col};background:${col}20;display:flex;align-items:center;justify-content:center;font-size:${Math.round(sz*.42)}px;font-weight:700;color:${col};box-shadow:0 2px 8px #0008${isSel?';outline:2px solid #fff':''}">${ndGlyph(nd.type)}${pumpOnOff}</div><div style="position:absolute;top:calc(100%+2px);left:50%;transform:translateX(-50%);font-size:9px;font-weight:600;color:${col};white-space:nowrap;pointer-events:none">${nd.label}</div>${elevLbl}`;
+    div.addEventListener('click',e=>{
+      e.stopPropagation();
+      if(tool==='select'){selectNode(nd);return;}
+      if(tool==='pipe'){handleNodePipeClick(nd);}
+    });
+    div.addEventListener('mousedown',e=>{
+      if(e.button!==0||tool!=='select')return;
+      e.stopPropagation();pushH();
+      startDrag('node',{node:nd,lat:nd.lat,lng:nd.lng},e);
+    });
+    layer.appendChild(div);
+  });
+}
+function ndGlyph(t){return{well:'W',tank:'T',pump:'⚡',endpoint:'E'}[t]||'?';}
+
+function redraw(){drawPipes();drawZones();drawNodes();refreshSidebar();}
+
+// ── GHOST ─────────────────────────────────────────────────────────────
+function updateGhost(){
+  gSvg.innerHTML='';
+  if(!ghostPt)return;
+  if(tool==='pipe'&&drawPts.length>0){
+    const last=drawPts[drawPts.length-1];
+    angSnap=computeAngSnap(last[0],last[1],ghostPt[0],ghostPt[1]);
+    const snap=findSnap(ghostPt[0],ghostPt[1],null);
+    const lastPx=ll2p(last[0],last[1]);
+    const gPx=ll2p(ghostPt[0],ghostPt[1]);
+    const nearLast=drawPts.length>=2&&pixDist(gPx,lastPx)<16;
+    let endPt=nearLast?last:(snap?snap.pt:applyAngSnap(last[0],last[1],ghostPt[0],ghostPt[1],angSnap));
+    const col=nearLast?'#4ade80':(snap?'#4ade80':'#58a6ff');
+    const pxpts=[...drawPts,endPt].map(p=>ll2p(p[0],p[1]));
+    const g=mkPath(pxpts,col,PW[dia]||3,'6,4',0.7);if(g)gSvg.appendChild(g);
+    // placed point dots
+    drawPts.forEach((pt,i)=>{
+      const p=ll2p(pt[0],pt[1]);
+      const c=mkCirc(p.x,p.y,i===0?5:3,i===0?'#fff':'#58a6ff','none','0');
+      c.setAttribute('opacity','0.85');gSvg.appendChild(c);
+    });
+    const epx=ll2p(endPt[0],endPt[1]);
+    if(nearLast){
+      const ring=mkCirc(lastPx.x,lastPx.y,12,'none','#4ade80','2');ring.setAttribute('opacity','0.6');gSvg.appendChild(ring);
+      const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x',lastPx.x);txt.setAttribute('y',lastPx.y-18);
+      txt.setAttribute('text-anchor','middle');txt.setAttribute('fill','#4ade80');txt.setAttribute('font-size','10');txt.setAttribute('font-family','-apple-system,sans-serif');txt.setAttribute('pointer-events','none');
+      txt.textContent='Click to finish';gSvg.appendChild(txt);
+    } else {
+      const c=mkCirc(epx.x,epx.y,snap?8:4,'none',col,'2');gSvg.appendChild(c);
+      // angle guide
+      if(angSnap!==null){
+        const p=ll2p(last[0],last[1]),rad=angSnap*Math.PI/180,len=3000;
+        const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1',p.x-len*Math.cos(rad));line.setAttribute('y1',p.y-len*Math.sin(rad));
+        line.setAttribute('x2',p.x+len*Math.cos(rad));line.setAttribute('y2',p.y+len*Math.sin(rad));
+        line.setAttribute('stroke','rgba(96,165,250,0.25)');line.setAttribute('stroke-width','1');line.setAttribute('stroke-dasharray','6,6');
+        gSvg.appendChild(line);
+      }
+    }
+    updateSnapRing(snap,endPt);
+  } else if(tool==='zone'&&drawPts.length>0){
+    const firstPx=ll2p(drawPts[0][0],drawPts[0][1]);
+    const gPx=ll2p(ghostPt[0],ghostPt[1]);
+    const nearFirst=drawPts.length>=3&&pixDist(gPx,firstPx)<18;
+    const endPt=nearFirst?drawPts[0]:ghostPt;
+    const col=pendingZoneType==='tank'?'#fb923c':'#4ade80';
+    const pxpts=[...drawPts,endPt].map(p=>ll2p(p[0],p[1]));
+    const g=mkPath(pxpts,col,1.5,'5,4',0.7);if(g)gSvg.appendChild(g);
+    drawPts.forEach((pt,i)=>{
+      const p=ll2p(pt[0],pt[1]);
+      const r=i===0?7:3;
+      const c=mkCirc(p.x,p.y,r,i===0?col:'none',col,'2');
+      c.setAttribute('opacity','0.9');gSvg.appendChild(c);
+      if(i===0&&drawPts.length>=3){
+        const txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+        txt.setAttribute('x',p.x);txt.setAttribute('y',p.y-14);
+        txt.setAttribute('text-anchor','middle');txt.setAttribute('fill',col);txt.setAttribute('font-size','10');txt.setAttribute('font-family','-apple-system,sans-serif');txt.setAttribute('pointer-events','none');
+        txt.textContent=nearFirst?'Click to close':'';gSvg.appendChild(txt);
+      }
+    });
+    if(nearFirst)updateSnapRing({type:'endpoint'},drawPts[0]);
+    else updateSnapRing(null,null);
+  } else updateSnapRing(null,null);
+}
+
+function updateSnapRing(snap,pt){
+  const r=document.getElementById('snap-ring');
+  if(!snap||!pt){r.style.display='none';return;}
+  const px=ll2p(pt[0],pt[1]);
+  r.style.display='block';r.style.left=px.x+'px';r.style.top=px.y+'px';
+  const col=snap.type==='node'?'var(--warn)':snap.type==='midspan'?'var(--pump)':'var(--ok)';
+  const sz=snap.type==='midspan'?18:22;
+  r.style.borderColor=col;r.style.width=r.style.height=sz+'px';
+}
+
+// ── TOOL SWITCHING ────────────────────────────────────────────────────
+function setTool(t){
+  if(drawPts.length>0)cancelDraw();
+  tool=t;
+  ['select','pipe','zone'].forEach(n=>document.getElementById('t-'+n)?.classList.toggle('on',n===t));
+  document.getElementById('pipe-opts').style.display=t==='pipe'?'flex':'none';
+  document.getElementById('pipe-sep').style.display=t==='pipe'?'block':'none';
+  document.getElementById('dia-opts').style.display=t==='pipe'?'flex':'none';
+  document.getElementById('draw-act').style.display=(t==='pipe'||t==='zone')?'flex':'none';
+  map.getContainer().style.cursor=t!=='select'?'crosshair':'';
+  if(t!=='select')clearSelection();
+}
+window.setTool=setTool;
+
+function setPSt(s){pipeSt=s;['existing','planned','damaged'].forEach(n=>document.getElementById('ps-'+n)?.classList.toggle('on',n===s));}
+window.setPSt=setPSt;
+function setDia(d){dia=d;['5','4','3','2','20mm'].forEach(n=>document.getElementById('d-'+n)?.classList.toggle('on',n===d));}
+window.setDia=setDia;
+function toggleLyr(l){lyr[l]=!lyr[l];document.getElementById('lyr-'+l)?.classList.toggle('on',lyr[l]);redraw();}
+window.toggleLyr=toggleLyr;
+
+// ── MAP EVENTS ────────────────────────────────────────────────────────
+map.on('click',e=>{
+  if(activeDrag)return;
+  const now=Date.now();
+  if(now-lastClickT<350&&(tool==='pipe'||tool==='zone')){lastClickT=now;return;}
+  lastClickT=now;
+  const ll=[e.latlng.lat,e.latlng.lng];
+  if(tool==='pipe')handlePipeClick(ll);
+  else if(tool==='zone')handleZoneClick(ll);
+  else clearSelection();
+});
+map.on('dblclick',e=>{
+  L.DomEvent.stopPropagation(e);
+  if(tool==='pipe'&&drawPts.length>=2)finishDraw();
+  else if(tool==='zone'&&drawPts.length>=3)finishDraw();
+});
+map.on('mousemove',e=>{
+  if(activeDrag)return;
+  ghostPt=[e.latlng.lat,e.latlng.lng];updateGhost();
+});
+map.on('mouseout',()=>{ghostPt=null;gSvg.innerHTML='';updateSnapRing(null,null);});
+map.getContainer().addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  const r=map.getContainer().getBoundingClientRect();
+  const ll=p2ll(e.clientX-r.left,e.clientY-r.top);
+  showCtx(e.clientX,e.clientY,ll[0],ll[1]);
+});
+
+// ── DRAW LOGIC ────────────────────────────────────────────────────────
+function handlePipeClick(ll){
+  const snap=findSnap(ll[0],ll[1],null);
+  let pt=snap?snap.pt:(drawPts.length>0?applyAngSnap(drawPts[drawPts.length-1][0],drawPts[drawPts.length-1][1],ll[0],ll[1],angSnap):ll);
+  // snap midspan on first click = split and start from there
+  if(drawPts.length===0&&snap?.type==='midspan'){
+    pushH();const sp=splitPipe(pipes.find(p=>p.id===snap.pipeId),snap.segIdx,snap.pt);pt=sp;
+  }
+  // finish if near last point (pixel check)
+  if(drawPts.length>=2){
+    const lpx=ll2p(drawPts[drawPts.length-1][0],drawPts[drawPts.length-1][1]);
+    const ppx=ll2p(pt[0],pt[1]);
+    if(pixDist(lpx,ppx)<16){finishPipe();return;}
+  }
+  drawPts.push(pt);updateGhost();
+}
+function handleNodePipeClick(nd){
+  // Start pipe from node position
+  if(drawPts.length===0){drawPts=[[nd.lat,nd.lng]];ghostPt=[nd.lat,nd.lng];updateGhost();}
+  else handlePipeClick([nd.lat,nd.lng]);
+}
+
+function handleZoneClick(ll){
+  if(drawPts.length>=3){
+    const fpx=ll2p(drawPts[0][0],drawPts[0][1]),cpx=ll2p(ll[0],ll[1]);
+    if(pixDist(fpx,cpx)<18){finishZone();return;}
+  }
+  drawPts.push(ll);updateGhost();
+}
+
+window.finishDraw=function(){if(tool==='pipe')finishPipe();else if(tool==='zone')finishZone();};
+window.cancelDraw=cancelDraw;
+function cancelDraw(){drawPts=[];angSnap=null;gSvg.innerHTML='';pendingZoneType='zone';updateZoneToolColor();updateSnapRing(null,null);}
+
+function finishPipe(){
+  if(drawPts.length<2){cancelDraw();return;}
+  pushH();
+  // resolve midspan endpoints
+  const ss=findSnap(drawPts[0][0],drawPts[0][1],null);
+  let s=drawPts[0];
+  if(ss?.type==='midspan'){s=splitPipe(pipes.find(p=>p.id===ss.pipeId),ss.segIdx,ss.pt);}
+  const es=findSnap(drawPts[drawPts.length-1][0],drawPts[drawPts.length-1][1],null);
+  let e=drawPts[drawPts.length-1];
+  if(es?.type==='midspan'){e=splitPipe(pipes.find(p=>p.id===es.pipeId),es.segIdx,es.pt);}
+  const pts=[s,...drawPts.slice(1,-1),e];
+  const pipe={id:'p'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    label:'Pipe '+pc++,pts,dia,status:pipeSt,isReuse:false,valveState:'open'};
+  pipes.push(pipe);cancelDraw();selPipe=pipe;
+  pushToFB();redraw();showPipeCard(pipe);
+}
+
+function finishZone(){
+  if(drawPts.length<3){cancelDraw();return;}
+  pushH();
+  const isTank=pendingZoneType==='tank';
+  const zone={id:'z'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    label:(isTank?'Tank ':'Zone ')+zc++,polygon:[...drawPts],
+    rowSpacingM:7,treeSpacingM:7,emitters:2,lhrPerEmitter:4,rowAngleDeg:15,pricePerTree:0,subMainDia:'1.5',
+    color:isTank?'#fb923c':ZONE_COLS[zones.filter(z=>z.type!=='tank').length%ZONE_COLS.length],
+    type:isTank?'tank':'zone',
+    ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{})};
+  zones.push(zone);cancelDraw();selZone=zone;
+  pushToFB();redraw();showZoneCard(zone);
+}
+
+// ── CONTEXT MENU ──────────────────────────────────────────────────────
+function showCtx(cx,cy,lat,lng){
+  const el=document.getElementById('ctx'),bd=document.getElementById('ctx-bd');
+  el.innerHTML='';
+  const ring=document.createElement('div');ring.className='ctx-ring';
+  const items=[
+    {type:'well',icon:'💧',lbl:'WELL',cls:'ci-well',angle:-90},
+    {type:'tank',icon:'🏗',lbl:'TANK',cls:'ci-tank',angle:-30},
+    {type:'pump',icon:'⚡',lbl:'PUMP',cls:'ci-pump',angle:30},
+    {type:'endpoint',icon:'🌿',lbl:'END',cls:'ci-ep',angle:90},
+    {type:'tank-area',icon:'💦',lbl:'POOL',cls:'ci-tank',angle:150},
+  ];
+  items.forEach(item=>{
+    const rad=item.angle*Math.PI/180,r=68;
+    const x=85+r*Math.cos(rad),y=85+r*Math.sin(rad);
+    const div=document.createElement('div');div.className='ctx-item '+item.cls;
+    div.style.left=x+'px';div.style.top=y+'px';
+    div.innerHTML=`<span style="font-size:16px">${item.icon}</span><span class="ci-lbl">${item.lbl}</span>`;
+    div.onclick=()=>{closeCtx();placeNode(item.type,lat,lng);};
+    ring.appendChild(div);
+  });
+  el.appendChild(ring);
+  el.style.left=(cx-85)+'px';el.style.top=(cy-85)+'px';el.style.display='block';
+  bd.classList.remove('hidden');
+}
+function closeCtx(){document.getElementById('ctx').style.display='none';document.getElementById('ctx-bd').classList.add('hidden');}
+window.closeCtx=closeCtx;
+
+// ── NODE PLACEMENT ────────────────────────────────────────────────────
+function placeNode(type,lat,lng){
+  if(type==='tank-area'){setTool('zone');pendingZoneType='tank';updateZoneToolColor();return;}
+  pushH();
+  const node={id:'n'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    type,lat,lng,label:{well:'W',tank:'T',pump:'P',endpoint:'E'}[type]+(nc++),elev:null,
+    ...(type==='well'?{depth:40,drawdownFactor:0.15,pumpHead:30,pumpFlowM3h:10}:{}),
+    ...(type==='tank'?{waterLevel:2,maxOutletFlowM3h:5}:{}),
+    ...(type==='pump'?{pumpHead:20,pumpFlowM3h:8,on:true}:{})};
+  nodes.push(node);selNode=node;pushToFB();redraw();showNodeCard(node);
+}
+function updateZoneToolColor(){
+  const b=document.getElementById('t-zone');if(!b)return;
+  if(pendingZoneType==='tank'&&tool==='zone'){b.style.background='var(--tank)';b.style.borderColor='var(--tank)';b.style.color='#0d1117';}
+  else{b.style.background='';b.style.borderColor='';b.style.color='';}
+}
+
+// ── SELECTION ─────────────────────────────────────────────────────────
+function selectPipe(p){selPipe=p;selNode=null;selZone=null;redraw();showPipeCard(p);}
+function selectNode(n){selNode=n;selPipe=null;selZone=null;redraw();showNodeCard(n);}
+function selectZone(z){selZone=z;selPipe=null;selNode=null;redraw();showZoneCard(z);}
+function clearSelection(){selPipe=null;selNode=null;selZone=null;closeCard();redraw();}
+window.clearSelection=clearSelection;
+
+window.deleteSelected=function(){
+  if(selPipe){if(!confirm('Delete pipe?'))return;pushH();pipes=pipes.filter(p=>p.id!==selPipe.id);selPipe=null;}
+  else if(selNode){if(!confirm('Delete node?'))return;pushH();nodes=nodes.filter(n=>n.id!==selNode.id);selNode=null;}
+  else if(selZone){if(!confirm('Delete zone?'))return;pushH();zones=zones.filter(z=>z.id!==selZone.id);selZone=null;}
+  else return;
+  closeCard();pushToFB();redraw();
+};
+
+// ── PROPERTY CARDS ────────────────────────────────────────────────────
+function closeCard(){const c=document.getElementById('pcard');c.style.display='none';c.innerHTML='';}
+window.closeCard=closeCard;
+
+function posCard(lat,lng){
+  const c=document.getElementById('pcard'),mw=document.getElementById('mw');
+  const px=ll2p(lat,lng);
+  let x=px.x+22,y=px.y-22;
+  if(x+280>mw.offsetWidth)x=px.x-295;
+  if(y+400>mw.offsetHeight)y=mw.offsetHeight-410;
+  if(y<8)y=8;
+  c.style.left=x+'px';c.style.top=y+'px';c.style.display='block';
+}
+
+function showPipeCard(pipe){
+  if(!pipe)return;
+  const len=pipeLenM(pipe);
+  const c=document.getElementById('pcard');
+  c.innerHTML=`<div class="pc-h" style="color:${pipeCol(pipe)}">PIPE — ${pipe.label}</div>
+    <div class="pc-r"><label>Label</label><input id="pc-lbl" value="${pipe.label}"></div>
+    <div class="pc-r"><label>Diameter</label><select id="pc-dia">${['5','4','3','2','20mm'].map(d=>`<option value="${d}"${pipe.dia===d?' selected':''}>${d}"</option>`).join('')}</select></div>
+    <div class="pc-r"><label>Status</label><select id="pc-st">
+      <option value="existing"${pipe.status==='existing'?' selected':''}>Existing</option>
+      <option value="planned"${pipe.status==='planned'?' selected':''}>Planned new</option>
+      <option value="damaged"${pipe.status==='damaged'?' selected':''}>Damaged</option>
+    </select></div>
+    ${pipe.isReuse?`<div class="pc-hint" style="color:var(--reuse)">↺ Reused from existing stock</div>`:''}
+    <div class="pc-hint">Length: <b>${len.toFixed(1)}m</b> · ${pipe.dia}" · ${pipe.pts.length} pts</div>
+    <div class="pc-btns">
+      <button class="pcb ok" onclick="applyPipe('${pipe.id}')">✓ Apply</button>
+      <button class="pcb del" onclick="deleteSelected()">× Delete</button>
+      <button class="pcb" onclick="closeCard()">✕</button>
+    </div>
+    ${pipe.status==='existing'?`<div class="pc-sect">
+      <button class="pcb act" style="width:100%" onclick="reuseP('${pipe.id}')">↺ Copy to new layer (reuse from stock)</button>
+    </div>`:''}`;
+  const mid=pipe.pts[Math.floor(pipe.pts.length/2)];
+  posCard(mid[0],mid[1]);
+}
+
+window.applyPipe=function(id){
+  const p=pipes.find(x=>x.id===id);if(!p)return;pushH();
+  p.label=document.getElementById('pc-lbl')?.value||p.label;
+  p.dia=document.getElementById('pc-dia')?.value;
+  p.status=document.getElementById('pc-st')?.value;
+  pushToFB();redraw();closeCard();
+};
+
+// Reuse: creates a copy in planned layer (isReuse:true).
+// Procurement treats isReuse pipes as drawing from existing stock.
+window.reuseP=function(id){
+  const src=pipes.find(x=>x.id===id);if(!src)return;pushH();
+  const copy={id:'p'+Date.now()+'_'+Math.random().toString(36).slice(2,5)+'_r',
+    label:src.label+' (reuse)',pts:JSON.parse(JSON.stringify(src.pts)),
+    dia:src.dia,status:'planned',isReuse:true,valveState:'open',sourcePipeId:src.id};
+  pipes.push(copy);selPipe=copy;
+  pushToFB();redraw();showPipeCard(copy);
+};
+
+function showNodeCard(nd){
+  if(!nd)return;
+  const c=document.getElementById('pcard');
+  const isW=nd.type==='well',isT=nd.type==='tank',isP=nd.type==='pump';
+  c.innerHTML=`<div class="pc-h" style="color:${NCOL[nd.type]||'#888'}">${nd.type.toUpperCase()} — ${nd.label}</div>
+    <div class="pc-r"><label>Label</label><input id="pc-nl" value="${nd.label}"></div>
+    <div class="pc-r"><label>Elevation (m)</label><input id="pc-el" type="number" value="${nd.elev??''}"></div>
+    ${isW?`<div class="pc-r"><label>Well depth (m)</label><input id="pc-wd" type="number" value="${nd.depth||40}"></div>
+    <div class="pc-r"><label>Drawdown factor</label><input id="pc-dd" type="number" step="0.01" value="${nd.drawdownFactor||0.15}"></div>
+    <div class="pc-r"><label>Pump head (m)</label><input id="pc-ph" type="number" value="${nd.pumpHead||30}"></div>
+    <div class="pc-r"><label>Flow (m³/hr)</label><input id="pc-pf" type="number" value="${nd.pumpFlowM3h||10}"></div>
+    <div class="pc-hint">Net head = elev − depth − drawdown×depth + pumpHead</div>`:''}
+    ${isT?`<div class="pc-r"><label>Water level (m)</label><input id="pc-wl" type="number" value="${nd.waterLevel||2}"></div>
+    <div class="pc-r"><label>Max flow (m³/hr)</label><input id="pc-mf" type="number" value="${nd.maxOutletFlowM3h||5}"></div>`:''}
+    ${isP?`<div class="pc-r"><label>Pump head (m)</label><input id="pc-ph" type="number" value="${nd.pumpHead||20}"></div>
+    <div class="pc-r"><label>Flow (m³/hr)</label><input id="pc-pf" type="number" value="${nd.pumpFlowM3h||8}"></div>
+    <div class="pc-r"><label>State</label><select id="pc-pon"><option value="1"${nd.on?' selected':''}>ON — adds head</option><option value="0"${!nd.on?' selected':''}>OFF — bypass</option></select></div>`:''}
+    <div class="pc-btns">
+      <button class="pcb ok" onclick="applyNode('${nd.id}')">✓ Apply</button>
+      <button class="pcb del" onclick="deleteSelected()">× Delete</button>
+      <button class="pcb" onclick="closeCard()">✕</button>
+    </div>`;
+  posCard(nd.lat,nd.lng);
+}
+
+window.applyNode=function(id){
+  const nd=nodes.find(x=>x.id===id);if(!nd)return;pushH();
+  nd.label=document.getElementById('pc-nl')?.value||nd.label;
+  nd.elev=parseFloat(document.getElementById('pc-el')?.value)||null;
+  if(nd.type==='well'){nd.depth=parseFloat(document.getElementById('pc-wd')?.value)||40;nd.drawdownFactor=parseFloat(document.getElementById('pc-dd')?.value)||0.15;nd.pumpHead=parseFloat(document.getElementById('pc-ph')?.value)||30;nd.pumpFlowM3h=parseFloat(document.getElementById('pc-pf')?.value)||10;}
+  if(nd.type==='tank'){nd.waterLevel=parseFloat(document.getElementById('pc-wl')?.value)||2;nd.maxOutletFlowM3h=parseFloat(document.getElementById('pc-mf')?.value)||5;}
+  if(nd.type==='pump'){nd.pumpHead=parseFloat(document.getElementById('pc-ph')?.value)||20;nd.pumpFlowM3h=parseFloat(document.getElementById('pc-pf')?.value)||8;nd.on=document.getElementById('pc-pon')?.value==='1';}
+  pushToFB();redraw();closeCard();
+};
+
+function showZoneCard(zone){
+  if(!zone)return;
+  const c=document.getElementById('pcard');
+  const area=polyArea(zone.polygon);const areaDun=(area/1000).toFixed(1);
+  const isTank=zone.type==='tank';
+  // Tank volume calc
+  let volHtml='';
+  if(isTank){
+    const wt=zone.wallType||'vertical';
+    const md=zone.maxDepth||3;
+    const sa=zone.soilAngle||45;
+    let vol=0;
+    if(wt==='vertical'){
+      vol=area*md; // m² × m = m³
+    } else {
+      // Sloped earthen walls: each wall slopes inward at soilAngle from horizontal.
+      // Horizontal setback per wall = depth / tan(soilAngle).
+      // The base of the tank is the top surface shrunk inward by setback on all sides.
+      // Volume = (topArea + baseArea) / 2 × depth  (average of top and base cross-sections)
+      const slope=md/Math.tan(sa*Math.PI/180);
+      const perim=polygonPerim(zone.polygon);
+      // Shrink area by perimeter×setback (Minkowski erosion approximation)
+      const baseArea=Math.max(0,area-perim*slope+Math.PI*slope*slope);
+      vol=(area+baseArea)/2*md;
+    }
+    zone._volumeM3=vol;
+    // Fill percentage (0-100). waterLevel stores fill pct for tanks.
+    const fillPct=zone.fillPct??Math.round((zone.waterLevel??2)/(md)*100);
+    const fillVol=vol*(fillPct/100);
+    volHtml=`<div class="pc-hint" style="margin-top:4px">
+      Total capacity: <b>~${vol.toFixed(0)}m³</b> (${(vol*1000).toFixed(0)}L)<br>
+      Current fill: <b>${fillPct}%</b> = ~${fillVol.toFixed(0)}m³
+    </div>`;
+  }
+  const rsp=zone.rowSpacingM||7,tsp=zone.treeSpacingM||7;
+  const trees=zone._treeCount??Math.round(area/(rsp*tsp));
+  c.innerHTML=`<div class="pc-h" style="color:${zone.color}">${isTank?'TANK POOL':'ZONE'} — ${zone.label}</div>
+    <div class="pc-r"><label>Name</label><input id="pc-zn" value="${zone.label}"></div>
+    ${isTank?`<div class="pc-r"><label>Wall type</label><select id="pc-wt">
+      <option value="vertical"${(zone.wallType||'vertical')==='vertical'?' selected':''}>Vertical (concrete/block)</option>
+      <option value="sloped"${zone.wallType==='sloped'?' selected':''}>Sloped (earthen — soil shear)</option>
+    </select></div>
+    <div class="pc-r"><label>Max depth (m)</label><input id="pc-md" type="number" value="${zone.maxDepth||3}" min="0.5" step="0.1"></div>
+    <div id="pc-slope-row" class="pc-r" style="${(zone.wallType||'vertical')==='sloped'?'':'display:none'}"><label>Soil angle (°)</label><input id="pc-sa" type="number" value="${zone.soilAngle||45}" min="20" max="80"></div>
+    <div class="pc-r"><label>Fill level (%)</label>
+      <div style="flex:1;display:flex;align-items:center;gap:6px">
+        <input id="pc-fp" type="range" min="0" max="100" value="${zone.fillPct??Math.round(((zone.waterLevel||2)/(zone.maxDepth||3))*100)}" style="flex:1;accent-color:var(--info)">
+        <span id="pc-fp-val" style="font-size:11px;color:var(--info);width:32px;text-align:right">${zone.fillPct??Math.round(((zone.waterLevel||2)/(zone.maxDepth||3))*100)}%</span>
+      </div>
+    </div>
+    <div class="pc-r"><label>Max flow (m³/hr)</label><input id="pc-mf" type="number" value="${zone.maxFlowM3h||5}" min="0"></div>
+    ${volHtml}`
+    :`<div class="pc-r"><label>Row direction</label>
+    <select id="pc-ra">
+      <option value="0"${(zone.rowAngleDeg??15)===0?' selected':''}>0° — rows run N-S</option>
+      <option value="15"${(zone.rowAngleDeg??15)===15?' selected':''}>15° CCW — NNW (olive typical)</option>
+      <option value="30"${(zone.rowAngleDeg??15)===30?' selected':''}>30° CCW — NNW-SSE</option>
+      <option value="45"${(zone.rowAngleDeg??15)===45?' selected':''}>45° CCW — NW-SE diagonal</option>
+      <option value="60"${(zone.rowAngleDeg??15)===60?' selected':''}>60° CCW — WNW-ESE</option>
+      <option value="75"${(zone.rowAngleDeg??15)===75?' selected':''}>75° CCW — nearly W-E</option>
+      <option value="90"${(zone.rowAngleDeg??15)===90?' selected':''}>90° — rows run E-W</option>
+      <option value="-15"${(zone.rowAngleDeg??15)===-15?' selected':''}>15° CW — NNE</option>
+      <option value="-45"${(zone.rowAngleDeg??15)===-45?' selected':''}>45° CW — NE-SW diagonal</option>
+    </select></div>
+    <div class="pc-r"><label>Sub-main dia</label>
+    <select id="pc-smd">
+      <option value="1.5"${(zone.subMainDia||'1.5')==='1.5'?' selected':''}>1½″ — standard</option>
+      <option value="2"${(zone.subMainDia||'1.5')==='2'?' selected':''}>2″ — long runs / high flow</option>
+    </select></div>
+    <div class="pc-r"><label>Row spacing (m)<br><span style="color:var(--tx3);font-size:9px">row-to-row</span></label><input id="pc-rs" type="number" value="${zone.rowSpacingM||7}" min="1" step="0.5"></div>
+    <div class="pc-r"><label>Tree spacing (m)<br><span style="color:var(--tx3);font-size:9px">within row</span></label><input id="pc-ts" type="number" value="${zone.treeSpacingM||7}" min="1" step="0.5"></div>
+    <div class="pc-r"><label>Emitters/tree</label><input id="pc-em" type="number" value="${zone.emitters||2}" min="1" max="8"></div>
+    <div class="pc-r"><label>L/hr per emitter</label><input id="pc-lr" type="number" value="${zone.lhrPerEmitter||4}" min="1"></div>
+    <div class="pc-r"><label>Price/tree (JD)</label><input id="pc-pt" type="number" value="${zone.pricePerTree||0}" min="0" step="0.5" placeholder="0"></div>
+    <div class="pc-hint" id="pc-zc" style="white-space:pre-line">${zoneCalcStr(zone,area,areaDun)}</div>
+    <div style="margin-top:5px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
+      ${zone._slope!=null
+        ?`<span style="font-size:9px;color:${zone._slope>5?'var(--err)':zone._slope>2?'var(--warn)':'var(--ok)'}">⛰ ${zone._slope}% slope ${zone._aspect!=null?'↓'+compassDir(zone._aspect):''} · ${zone._elevRange??'?'}m range</span>`
+        :zone._elevError
+          ?`<span style="font-size:9px;color:var(--err)">⚠ ${zone._elevError}</span>`
+          :`<span style="font-size:9px;color:var(--tx3)">No slope data — pipes shown flat</span>`}
+      <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchZoneElevation(zones.find(z=>z.id==='${zone.id}'))">${zone._elevQuerying?'Fetching…':zone._slope!=null?'⊕ Re-fetch':'⊕ Fetch slope'}</button>
+    </div>`}
+    <div class="pc-hint">${areaDun} dunum · ${area.toFixed(0)}m²</div>
+    <div class="pc-btns">
+      <button class="pcb ok" onclick="applyZone('${zone.id}')">✓ Apply</button>
+      <button class="pcb del" onclick="deleteSelected()">× Delete</button>
+      <button class="pcb" onclick="closeCard()">✕</button>
+    </div>`;
+  // live update tree calc and wall type toggle
+  ['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt'].forEach(id=>{
+    document.getElementById(id)?.addEventListener('change',refreshZoneCalc);
+    document.getElementById(id)?.addEventListener('input',refreshZoneCalc);
+  });
+  function refreshZoneCalc(){
+    zone.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
+    zone.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
+    zone.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
+    zone.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
+    zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
+    zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||4;
+    zone.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
+    redraw();
+    setTimeout(()=>{
+      const el=document.getElementById('pc-zc');
+      if(el)el.textContent=zoneCalcStr(zone,area,areaDun);
+    },50);
+  }
+  document.getElementById('pc-wt')?.addEventListener('change',e=>{
+    const sloped=e.target.value==='sloped';
+    document.getElementById('pc-slope-row').style.display=sloped?'':'none';
+  });
+  // Fill percentage slider — updates visual immediately
+  document.getElementById('pc-fp')?.addEventListener('input',e=>{
+    const pct=parseInt(e.target.value)||0;
+    document.getElementById('pc-fp-val').textContent=pct+'%';
+    zone.fillPct=pct;
+    zone.waterLevel=pct/100*(zone.maxDepth||3); // keep waterLevel in sync for drawTankFill
+    drawZones(); // live visual update
+  });
+  const mid=zoneCen(zone.polygon);posCard(mid[0],mid[1]);
+}
+
+// Returns the calc hint string for a zone, using actual tree count from grid
+// if available (_treeCount set by drawTreeGrid), otherwise falling back to
+// area/spacing approximation.
+function zoneCalcStr(zone,area,areaDun){
+  const trees=zone._treeCount??Math.round((area||0)/((zone.rowSpacingM||7)*(zone.treeSpacingM||7)));
+  const rows=zone._rowCount??0;
+  const emitters=zone._emitterCount??(trees*(zone.emitters||2));
+  const dem=(trees*(zone.emitters||2)*(zone.lhrPerEmitter||4)/1000).toFixed(2);
+  const price=zone.pricePerTree||0;
+  const totalPrice=price>0?trees*price:null;
+
+  let pipeStr='';
+  if(zone._lateralM!=null&&zone._subMainM!=null){
+    const lat=zone._lateralM,sub=zone._subMainM;
+    const latStr=lat>999?`${(lat/1000).toFixed(2)}km`:`${lat.toFixed(0)}m`;
+    const subStr=sub>999?`${(sub/1000).toFixed(2)}km`:`${sub.toFixed(0)}m`;
+    pipeStr=`\n20mm lateral: ${latStr} · ${zone.subMainDia||'1.5'}″ sub-main: ~${subStr}`
+           +`\nFeeders: ${rows} · Drip emitters: ${emitters.toLocaleString()}`;
+  }
+  let splitStr='';
+  if(zone._splitNeeded>1){
+    splitStr=`\n⚠ Split into ${zone._splitNeeded} pressure zones recommended`;
+  }
+  let connStr='';
+  if(zone._connDist!=null){
+    connStr=`\n→ Nearest ${zone._connDia}″ main: ${zone._connDist}m feeder needed`;
+  }
+  const priceStr=totalPrice!=null?`\nZone cost: ${totalPrice.toLocaleString()} JD  (${price} JD/tree × ${trees})`:'';
+  return `${areaDun} dun · ${trees} trees · ${dem} m³/hr${pipeStr}${splitStr}${connStr}${priceStr}`;
+}
+
+window.applyZone=function(id){
+  const z=zones.find(x=>x.id===id);if(!z)return;pushH();
+  z.label=document.getElementById('pc-zn')?.value||z.label;
+  if(z.type==='tank'){
+    z.wallType=document.getElementById('pc-wt')?.value||'vertical';
+    z.maxDepth=parseFloat(document.getElementById('pc-md')?.value)||3;
+    z.soilAngle=parseFloat(document.getElementById('pc-sa')?.value)||45;
+    z.fillPct=parseInt(document.getElementById('pc-fp')?.value)??50;
+    z.waterLevel=z.fillPct/100*z.maxDepth; // keep in sync
+    z.maxFlowM3h=parseFloat(document.getElementById('pc-mf')?.value)||5;
+  } else {
+    z.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
+    z.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
+    z.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
+    z.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
+    z.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
+    z.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||4;
+    z.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
+  }
+  pushToFB();redraw();closeCard();
+};
+
+// ── DRAG SYSTEM ───────────────────────────────────────────────────────
+function startDrag(type,payload,e){
+  if(e.preventDefault)e.preventDefault();
+  if(e.stopPropagation)e.stopPropagation();
+  const spx=ll2p(payload.lat,payload.lng);
+  activeDrag={type,payload,scx:e.clientX,scy:e.clientY,spx:spx.x,spy:spx.y};
+  document.body.style.cursor='grabbing';
+  document.addEventListener('mousemove',onDM,{passive:false});
+  document.addEventListener('mouseup',onDU,{once:true});
+}
+function onDM(e){
+  if(!activeDrag)return;
+  const dx=e.clientX-activeDrag.scx,dy=e.clientY-activeDrag.scy;
+  const nl=p2ll(activeDrag.spx+dx,activeDrag.spy+dy);
+  const snap=findSnap(nl[0],nl[1],activeDrag.type==='ppt'?activeDrag.payload.pipe.id:null);
+  const fl=snap&&activeDrag.type!=='zvtx'?snap.pt:nl;
+  updateSnapRing(snap,fl);
+  if(activeDrag.type==='node'){activeDrag.payload.node.lat=fl[0];activeDrag.payload.node.lng=fl[1];drawNodes();drawPipes();}
+  else if(activeDrag.type==='ppt'){activeDrag.payload.pipe.pts[activeDrag.payload.ptIdx]=fl;drawPipes();}
+  else if(activeDrag.type==='zvtx'){activeDrag.payload.zone.polygon[activeDrag.payload.vtxIdx]=fl;drawZones();}
+}
+function onDU(){
+  if(!activeDrag)return;
+  document.removeEventListener('mousemove',onDM);
+  document.body.style.cursor='';updateSnapRing(null,null);
+  pushToFB();redraw();activeDrag=null;
+}
+document.addEventListener('mouseup',()=>{if(activeDrag){document.body.style.cursor='';document.removeEventListener('mousemove',onDM);updateSnapRing(null,null);activeDrag=null;}},{passive:true});
+
+// ── PROCUREMENT ───────────────────────────────────────────────────────
+function calcProc(){
+  const stock={},needed={};
+  const sz=['5','4','3','2','20mm'];sz.forEach(s=>{stock[s]=0;needed[s]=0;});
+  pipes.forEach(p=>{
+    const l=pipeLenM(p),s=p.dia;
+    // Stock = only clean existing pipes (not damaged, not reuse copies)
+    if(p.status==='existing'&&!p.isReuse) stock[s]=(stock[s]||0)+l;
+    // Needed = planned new + reuse copies only — damaged is informational, ignored for procurement
+    else if(p.status==='planned') needed[s]=(needed[s]||0)+l;
+  });
+  return sz.map(s=>{
+    const st=stock[s]||0,nd=needed[s]||0,buy=Math.max(0,nd-st);
+    return{dia:s,stock:st,needed:nd,fromStock:Math.min(st,nd),buy};
+  }).filter(r=>r.stock>0||r.needed>0);
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────────────────
+let sidebarOpen=false;
+function toggleSidebar(){sidebarOpen=!sidebarOpen;document.getElementById('sb').classList.toggle('open',sidebarOpen);if(sidebarOpen)renderSidebar();}
+window.toggleSidebar=toggleSidebar;
+function refreshSidebar(){if(sidebarOpen)renderSidebar();}
+
+function renderSidebar(){
+  const body=document.getElementById('sb-bd');
+  const pr=calcProc();
+  let h=`<div class="sb-sec"><div class="sb-sec-h">Procurement — main pipes</div>
+    <div style="font-size:9px;color:var(--tx3);margin-bottom:4px">Stock=clean existing · Needed=planned · Buy=max(0,needed−stock)</div>
+    <table style="width:100%;font-size:10px;border-collapse:collapse">
+    <tr style="color:var(--tx3)"><th style="text-align:left;padding:2px 3px">Dia</th><th>Stock</th><th>Needed</th><th>From stk</th><th style="color:var(--info)">Buy</th></tr>`;
+  pr.forEach(r=>{h+=`<tr style="border-top:1px solid var(--bdr)">
+    <td style="padding:3px;font-weight:600">${r.dia}"</td>
+    <td style="text-align:center;color:var(--ok)">${r.stock.toFixed(0)}m</td>
+    <td style="text-align:center;color:var(--warn)">${r.needed.toFixed(0)}m</td>
+    <td style="text-align:center;color:var(--tx2)">${r.fromStock.toFixed(0)}m</td>
+    <td style="text-align:center;color:var(--info);font-weight:700">${r.buy.toFixed(0)}m</td>
+  </tr>`;});
+  h+=`</table></div>`;
+
+  // Irrigation pipe procurement from zone estimates
+  const cropZones=zones.filter(z=>z.type!=='tank'&&z._lateralM!=null);
+  if(cropZones.length>0){
+    const totalLat=cropZones.reduce((a,z)=>a+(z._lateralM||0),0);
+    const totalSub15=cropZones.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
+    const totalSub2=cropZones.filter(z=>z.subMainDia==='2').reduce((a,z)=>a+(z._subMainM||0),0);
+    const totalTrees=cropZones.reduce((a,z)=>a+(z._treeCount||0),0);
+    const totalPrice=cropZones.reduce((a,z)=>a+((z._treeCount||0)*(z.pricePerTree||0)),0);
+    const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
+    h+=`<div class="sb-sec"><div class="sb-sec-h">Procurement — irrigation pipes</div>
+      <div style="font-size:9px;color:var(--tx3);margin-bottom:4px">From zone grid estimates · ${totalTrees} trees across ${cropZones.length} zone(s)</div>
+      <table style="width:100%;font-size:10px;border-collapse:collapse">
+      <tr style="color:var(--tx3)"><th style="text-align:left;padding:2px 3px">Type</th><th colspan="2">Estimated needed</th></tr>
+      <tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">20mm lateral</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">${fmtM(totalLat)}</td>
+      </tr>
+      ${totalSub15>0?`<tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">1½″ sub-main</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">~${fmtM(totalSub15)}</td>
+      </tr>`:''}
+      ${totalSub2>0?`<tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">2″ sub-main</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">~${fmtM(totalSub2)}</td>
+      </tr>`:''}
+      <tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">Feeder tees</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">${cropZones.reduce((a,z)=>a+(z._rowCount||0),0)} pcs</td>
+      </tr>
+      <tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:3px;font-weight:600">Drip emitters</td>
+        <td colspan="2" style="text-align:center;color:var(--info);font-weight:700">${cropZones.reduce((a,z)=>a+(z._emitterCount||0),0).toLocaleString()} pcs</td>
+      </tr>
+      </table>
+    </div>`;
+
+    // Pricing summary
+    if(cropZones.some(z=>z.pricePerTree>0)){
+      h+=`<div class="sb-sec"><div class="sb-sec-h">Zone pricing</div>`;
+      cropZones.forEach(z=>{
+        const trees=z._treeCount||0;
+        const price=z.pricePerTree||0;
+        const zoneCost=trees*price;
+        h+=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;padding:4px 6px;border-radius:var(--rs);background:var(--sur2);margin-bottom:3px">
+          <div><div style="display:flex;align-items:center;gap:5px"><div style="width:7px;height:7px;border-radius:50%;background:${z.color||'#4ade80'}"></div><span style="color:var(--tx)">${z.label}</span></div>
+          <div style="color:var(--tx3);margin-top:1px">${trees} trees × ${price} JD/tree</div></div>
+          <div style="font-weight:700;color:${zoneCost>0?'var(--ok)':'var(--tx3)'}">${zoneCost>0?zoneCost.toLocaleString()+' JD':'—'}</div>
+        </div>`;
+      });
+      h+=`<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:6px 8px;border-radius:var(--rs);background:var(--sur3);border:1px solid var(--bdr2);margin-top:4px">
+        <span style="font-weight:600;color:var(--tx)">Total</span>
+        <span style="font-weight:700;color:var(--ok);font-size:13px">${totalPrice.toLocaleString()} JD</span>
+      </div></div>`;
+    }
+  }
+
+  h+=`<div class="sb-sec"><div class="sb-sec-h">Zones (${zones.length})</div>`;
+  zones.forEach(z=>{
+    const area=(polyArea(z.polygon)/1000).toFixed(1);
+    const isCrop=z.type!=='tank';
+    const trees=isCrop&&z._treeCount?z._treeCount:0;
+    const treeInfo=trees?` · ${trees} trees`:'';
+    const latInfo=isCrop&&z._lateralM?` · ${z._lateralM>999?(z._lateralM/1000).toFixed(1)+'km':z._lateralM.toFixed(0)+'m'} lat`:'';
+    const zoneCost=trees&&z.pricePerTree?trees*z.pricePerTree:0;
+    const priceInfo=zoneCost>0?` · ${zoneCost.toLocaleString()} JD`:'';
+    h+=`<div class="sb-item${z.id===selZone?.id?' sel':''}" onclick="selectZone_sb('${z.id}')">
+      <div class="sb-sw" style="background:${z.color||'#4ade80'}"></div>
+      <div class="sb-nm">${z.type==='tank'?'🏗 ':''}${z.label}</div>
+      <div class="sb-mt">${area}dun${treeInfo}${latInfo}${priceInfo}</div></div>`;
+  });h+=`</div>`;
+
+  // Nodes
+  h+=`<div class="sb-sec"><div class="sb-sec-h">Nodes (${nodes.length})</div>`;
+  nodes.forEach(nd=>{
+    h+=`<div class="sb-item${nd.id===selNode?.id?' sel':''}" onclick="selectNode_sb('${nd.id}')">
+      <div class="sb-sw" style="background:${NCOL[nd.type]||'#888'}"></div>
+      <div class="sb-nm">${nd.label}</div>
+      <div class="sb-mt">${nd.type}${nd.elev!=null?` · ${nd.elev}m`:''}</div></div>`;
+  });h+=`</div>`;
+
+  // Pipes
+  h+=`<div class="sb-sec"><div class="sb-sec-h">Pipes (${pipes.length})</div>`;
+  pipes.forEach(p=>{
+    const len=pipeLenM(p).toFixed(0);
+    h+=`<div class="sb-item${p.id===selPipe?.id?' sel':''}" onclick="selectPipe_sb('${p.id}')">
+      <div class="sb-sw" style="background:${pipeCol(p)}"></div>
+      <div class="sb-nm">${p.label}${p.isReuse?' ↺':''}</div>
+      <div class="sb-mt">${p.dia}" · ${len}m</div></div>`;
+  });h+=`</div>`;
+
+  body.innerHTML=h;
+}
+window.selectZone_sb=function(id){const z=zones.find(x=>x.id===id);if(z){selectZone(z);toggleSidebar();}};
+window.selectNode_sb=function(id){const n=nodes.find(x=>x.id===id);if(n){selectNode(n);toggleSidebar();}};
+window.selectPipe_sb=function(id){const p=pipes.find(x=>x.id===id);if(p){selectPipe(p);toggleSidebar();}};
+
+// ── GEOMETRY HELPERS ──────────────────────────────────────────────────
+function pipeLenM(pipe){let t=0;for(let i=0;i<pipe.pts.length-1;i++)t+=hav(pipe.pts[i],pipe.pts[i+1]);return t;}
+function polyArea(poly){
+  if(poly.length<3)return 0;const R=6371000;let a=0;
+  for(let i=0;i<poly.length;i++){const j=(i+1)%poly.length;
+    const la1=poly[i][0]*Math.PI/180,la2=poly[j][0]*Math.PI/180;
+    const lo1=poly[i][1]*Math.PI/180,lo2=poly[j][1]*Math.PI/180;
+    a+=lo1*Math.sin(la2)-lo2*Math.sin(la1);}
+  return Math.abs(a/2)*R*R;
+}
+function polygonPerim(poly){let t=0;for(let i=0;i<poly.length;i++)t+=hav(poly[i],poly[(i+1)%poly.length]);return t;}
+function zoneCen(poly){return[poly.reduce((a,p)=>a+p[0],0)/poly.length,poly.reduce((a,p)=>a+p[1],0)/poly.length];}
+
+// ── FIREBASE ──────────────────────────────────────────────────────────
+function pushToFB(){
+  setSS('syncing');ign=true;
+  set(dbRef(),san({pipes:pipes.length?pipes:null,nodes:nodes.length?nodes:null,
+    zones:zones.length?zones:null,sections:sections.length?sections:null}))
+    .then(()=>{setSS('synced');document.getElementById('save-txt').textContent='Saved '+new Date().toLocaleTimeString();})
+    .catch(err=>{setSS('offline');console.error(err);});
+}
+function subToProj(){
+  if(fbUnsub){fbUnsub();fbUnsub=null;}setSS('syncing');
+  try{
+    fbUnsub=onValue(dbRef(),snap=>{
+      if(ign){ign=false;return;}
+      const d=snap.val();
+      pipes=d?.pipes?(Array.isArray(d.pipes)?d.pipes:Object.values(d.pipes)):[];
+      nodes=d?.nodes?(Array.isArray(d.nodes)?d.nodes:Object.values(d.nodes)):[];
+      zones=d?.zones?(Array.isArray(d.zones)?d.zones:Object.values(d.zones)):[];
+      sections=d?.sections?(Array.isArray(d.sections)?d.sections:Object.values(d.sections)):[];
+      pc=pipes.length+1;nc=nodes.length+1;zc=zones.length+1;
+      setSS('synced');document.getElementById('save-txt').textContent='Live — '+new Date().toLocaleTimeString();
+      redraw();
+    },err=>{
+      console.error('Firebase onValue error:',err?.message||err);
+      setSS('offline');
+      document.getElementById('save-txt').textContent='DB error — working offline';
+      // Still render the map even without Firebase
+      redraw();
+    });
+  }catch(err){
+    console.error('Firebase subscribe error:',err);
+    setSS('offline');
+    redraw();
+  }
+}
+window.switchProject=function(){
+  const v=document.getElementById('proj-id').value.trim().replace(/[^a-zA-Z0-9_-]/g,'_');
+  if(!v)return;projId=v;pipes=[];nodes=[];zones=[];sections=[];acctItems=[];
+  clearSelection();closeCard();subToProj();loadAcctFromFB();
+};
+
+// ── ACCOUNTING ────────────────────────────────────────────────────────
+let acctItems=[],acctNextId=1;
+
+function acctAutoQty(item){
+  const cz=zones.filter(z=>z.type!=='tank'&&z._treeCount!=null);
+  switch(item.autoKey){
+    case 'lat20mm': return cz.reduce((a,z)=>a+(z._lateralM||0),0);
+    case 'sub1.5in': return cz.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
+    case 'sub2in':  return cz.filter(z=>z.subMainDia==='2').reduce((a,z)=>a+(z._subMainM||0),0);
+    case 'feeders': return cz.reduce((a,z)=>a+(z._rowCount||0),0);
+    case 'emitters':return cz.reduce((a,z)=>a+(z._emitterCount||0),0);
+    default:
+      if(item.autoKey?.startsWith('mainpipe-')){
+        const dia=item.autoKey.replace('mainpipe-','');
+        const stock=pipes.filter(p=>p.dia===dia&&p.status==='existing'&&!p.isReuse).reduce((a,p)=>a+pipeLenM(p),0);
+        const needed=pipes.filter(p=>p.dia===dia&&p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0);
+        return Math.max(0,needed-stock);
+      }
+      return item.qty||0;
+  }
+}
+function acctLineTotal(item){
+  return acctAutoQty(item)*(item.unitPrice||0);
+}
+
+function toggleAcct(){
+  const panel=document.getElementById('acct-panel');
+  const isOpen=panel.classList.toggle('open');
+  document.getElementById('acct-btn').classList.toggle('on',isOpen);
+  if(isOpen){redraw();setTimeout(renderAcct,60);}
+}
+window.toggleAcct=toggleAcct;
+
+function renderAcct(){
+  const body=document.getElementById('acct-body');
+  if(!body)return;
+  const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
+  const fmtJD=v=>v>0?`${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} JD`:'—';
+
+  if(!acctItems.length){initDefaultAcctItems();}
+  else{migrateAcctItems();}
+
+  let h='';
+  // Materials
+  h+=`<div class="acct-sec"><div class="acct-sec-h">Materials &amp; Components</div>
+  <table class="acct-table">
+  <tr><th style="width:36%">Item</th><th>Unit</th><th class="acct-num">Qty</th><th class="acct-num">Unit price (JD)</th><th class="acct-num">Total (JD)</th><th></th></tr>`;
+  acctItems.forEach((item,i)=>{
+    const qty=acctAutoQty(item);
+    const total=qty*(item.unitPrice||0);
+    const qtyDisp=item.autoKey?(qty>999?fmtM(qty):qty.toFixed(1)):(qty||0);
+    const autoTag=item.autoKey?`<span style="font-size:8px;color:var(--info);margin-left:3px">AUTO</span>`:'';
+    h+=`<tr>
+      <td>${item.label}${autoTag}</td>
+      <td style="color:var(--tx3)">${item.unit||''}</td>
+      <td class="acct-num">${item.autoKey
+        ?`<span style="color:var(--tx2)">${qtyDisp}</span>`
+        :`<input class="acct-inp" type="number" value="${qty}" min="0" onchange="setAcctQty(${i},this.value)">`}</td>
+      <td class="acct-num"><input class="acct-inp" type="number" value="${item.unitPrice||0}" min="0" step="0.01" onchange="setAcctPrice(${i},this.value)"></td>
+      <td class="acct-num" style="color:${total>0?'var(--ok)':'var(--tx3)'};font-weight:600">${total>0?fmtJD(total):'—'}</td>
+      <td><button onclick="removeAcctItem(${i})" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px">×</button></td>
+    </tr>`;
+  });
+  h+=`</table>
+  <div class="acct-add" style="margin-top:8px">
+    <input id="an-lbl" placeholder="Item name" style="flex:2">
+    <input id="an-unit" placeholder="Unit" style="width:55px">
+    <input id="an-qty" type="number" placeholder="Qty" style="width:55px" min="0">
+    <input id="an-price" type="number" placeholder="JD/unit" style="width:70px" min="0" step="0.01">
+    <button class="btn on" onclick="addManualAcctItem()">+ Add</button>
+  </div></div>`;
+
+  // Olive investment
+  const cropZones=zones.filter(z=>z.type!=='tank');
+  h+=`<div class="acct-sec"><div class="acct-sec-h">Olive Investment — per zone</div>
+  <table class="acct-table">
+  <tr><th>Zone</th><th class="acct-num">Trees</th><th class="acct-num">Price/tree (JD)</th><th class="acct-num">Total (JD)</th></tr>`;
+  let oliveTotal=0;
+  cropZones.forEach(z=>{
+    const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
+    oliveTotal+=cost;
+    h+=`<tr>
+      <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${z.color||'#4ade80'};margin-right:5px"></span>${z.label}</td>
+      <td class="acct-num">${trees}</td>
+      <td class="acct-num"><input class="acct-inp" type="number" value="${price}" min="0" step="0.5" onchange="setZonePrice('${z.id}',this.value)"></td>
+      <td class="acct-num" style="color:${cost>0?'var(--ok)':'var(--tx3)'};font-weight:600">${cost>0?fmtJD(cost):'—'}</td>
+    </tr>`;
+  });
+  if(!cropZones.length)h+=`<tr><td colspan="4" style="color:var(--tx3);padding:8px 6px;font-size:11px">No crop zones drawn yet</td></tr>`;
+  h+=`</table></div>`;
+
+  // Grand total
+  const matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+  const grand=matTotal+oliveTotal;
+  h+=`<div class="acct-total">
+    <div>
+      <div class="acct-total-lbl">Project total</div>
+      <div style="font-size:10px;color:var(--tx3);margin-top:2px">Materials ${fmtJD(matTotal)} + Olives ${fmtJD(oliveTotal)}</div>
+    </div>
+    <div class="acct-total-val">${fmtJD(grand)}</div>
+  </div>`;
+
+  body.innerHTML=h;
+}
+window.renderAcct=renderAcct;
+
+// If saved acctItems is missing any default auto-rows (e.g. after a code update),
+// insert them before the first manual item so they appear at the top.
+function migrateAcctItems(){
+  const required=[
+    {label:'2″ sub-main pipe',unit:'m',autoKey:'sub2in'},
+    {label:'1½″ sub-main pipe',unit:'m',autoKey:'sub1.5in'},
+    {label:'20mm drip lateral',unit:'m',autoKey:'lat20mm'},
+    {label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders'},
+    {label:'Drip emitters',unit:'pcs',autoKey:'emitters'},
+  ];
+  let changed=false;
+  const firstManualIdx=acctItems.findIndex(i=>!i.autoKey);
+  const insertAt=firstManualIdx>=0?firstManualIdx:acctItems.length;
+  required.forEach(req=>{
+    if(!acctItems.find(i=>i.autoKey===req.autoKey)){
+      acctItems.splice(insertAt,0,{id:acctNextId++,...req,unitPrice:0});
+      changed=true;
+    }
+  });
+  if(changed)pushAcctToFB();
+}
+
+function initDefaultAcctItems(){
+  // Order: largest pipe → smallest pipe → fittings → emitters
+  acctItems=[];
+  // Main pipes (buy quantity = planned - stock) largest to smallest
+  ['5','4','3','2'].forEach(dia=>{
+    const stock=pipes.filter(p=>p.dia===dia&&p.status==='existing'&&!p.isReuse).reduce((a,p)=>a+pipeLenM(p),0);
+    const needed=pipes.filter(p=>p.dia===dia&&p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0);
+    if(needed>0||stock>0){
+      acctItems.push({id:acctNextId++,label:`${dia}″ main pipe (buy)`,unit:'m',autoKey:`mainpipe-${dia}`,unitPrice:0});
+    }
+  });
+  // Distribution pipes
+  acctItems.push({id:acctNextId++,label:'2″ sub-main pipe',unit:'m',autoKey:'sub2in',unitPrice:0});
+  acctItems.push({id:acctNextId++,label:'1½″ sub-main pipe',unit:'m',autoKey:'sub1.5in',unitPrice:0});
+  acctItems.push({id:acctNextId++,label:'20mm drip lateral',unit:'m',autoKey:'lat20mm',unitPrice:0});
+  // Fittings & emitters
+  acctItems.push({id:acctNextId++,label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders',unitPrice:0});
+  acctItems.push({id:acctNextId++,label:'Drip emitters',unit:'pcs',autoKey:'emitters',unitPrice:0});
+  pushAcctToFB();
+}
+
+window.setAcctQty=function(i,v){if(acctItems[i])acctItems[i].qty=parseFloat(v)||0;renderAcct();pushAcctToFB();};
+window.setAcctPrice=function(i,v){if(acctItems[i])acctItems[i].unitPrice=parseFloat(v)||0;renderAcct();pushAcctToFB();};
+window.removeAcctItem=function(i){acctItems.splice(i,1);renderAcct();pushAcctToFB();};
+window.addManualAcctItem=function(){
+  const lbl=document.getElementById('an-lbl')?.value.trim();
+  if(!lbl)return;
+  const unit=document.getElementById('an-unit')?.value.trim()||'pcs';
+  const qty=parseFloat(document.getElementById('an-qty')?.value)||0;
+  const price=parseFloat(document.getElementById('an-price')?.value)||0;
+  acctItems.push({id:acctNextId++,label:lbl,unit,qty,unitPrice:price});
+  renderAcct();pushAcctToFB();
+  ['an-lbl','an-unit','an-qty','an-price'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+};
+window.setZonePrice=function(zoneId,val){
+  const z=zones.find(x=>x.id===zoneId);if(!z)return;
+  z.pricePerTree=parseFloat(val)||0;
+  renderAcct();pushToFB();
+};
+
+function pushAcctToFB(){
+  try{
+    const r=ref(db,'projects/'+projId+'/ft-acct');
+    set(r,san({items:acctItems.length?acctItems:null,nextId:acctNextId}));
+  }catch(e){console.warn('acct save:',e);}
+}
+function loadAcctFromFB(){
+  try{
+    const r=ref(db,'projects/'+projId+'/ft-acct');
+    onValue(r,snap=>{
+      const d=snap.val();
+      if(d?.items){acctItems=Array.isArray(d.items)?d.items:Object.values(d.items);acctNextId=d.nextId||acctItems.length+1;}
+      if(document.getElementById('acct-panel')?.classList.contains('open'))renderAcct();
+    },()=>{});
+  }catch(e){console.warn('acct load:',e);}
+}
+
+// ── CSV EXPORT ─────────────────────────────────────────────────────────
+function csvCell(v){const s=String(v??'');return s.includes(',')||s.includes('"')||s.includes('\n')?`"${s.replace(/"/g,'""')}"`:s;}
+function csvRow(...cells){return cells.map(csvCell).join(',')+'\r\n';}
+function dlCSV(content,filename){
+  const blob=new Blob(['\uFEFF'+content],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+window.exportAcctCSV=function(){
+  redraw();
+  const date=new Date().toISOString().slice(0,10),proj=projId||'FarmTwin';
+  let csv=csvRow('Date','Project','Category','Description','Reference','Unit','Quantity','Unit Cost (JD)','Line Total (JD)');
+  acctItems.forEach((item,i)=>{
+    const qty=acctAutoQty(item),total=qty*(item.unitPrice||0);
+    csv+=csvRow(date,proj,'Materials',item.label,item.autoKey?`AUTO-${item.autoKey}`:`M-${i+1}`,
+      item.unit||'pcs',qty.toFixed(1),(item.unitPrice||0).toFixed(2),total.toFixed(2));
+  });
+  zones.filter(z=>z.type!=='tank').forEach(z=>{
+    const trees=z._treeCount||0,price=z.pricePerTree||0;
+    csv+=csvRow(date,proj,'Olive Investment',z.label,'TREES-'+z.id,'trees',trees,(price).toFixed(2),(trees*price).toFixed(2));
+  });
+  const matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+  const oliveTotal=zones.filter(z=>z.type!=='tank').reduce((a,z)=>a+((z._treeCount||0)*(z.pricePerTree||0)),0);
+  csv+=csvRow('','','','','','','','','');
+  csv+=csvRow(date,proj,'SUBTOTAL','Materials','','','','',matTotal.toFixed(2));
+  csv+=csvRow(date,proj,'SUBTOTAL','Olive Investment','','','','',oliveTotal.toFixed(2));
+  csv+=csvRow(date,proj,'GRAND TOTAL','Total Project Cost','','','','',( matTotal+oliveTotal).toFixed(2));
+  dlCSV(csv,`${proj}_accounting_${date}.csv`);
+};
+
+window.exportSummaryCSV=function(){
+  redraw();
+  const date=new Date().toISOString().slice(0,10),proj=projId||'FarmTwin';
+  const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
+  let csv=csvRow(`FarmTwin Accounting Summary — ${proj} — ${date}`);
+  csv+=csvRow('');
+  csv+=csvRow('MATERIALS & COMPONENTS','','Qty','Unit','Unit Price (JD)','Total (JD)');
+  acctItems.forEach(item=>{
+    const qty=acctAutoQty(item),total=qty*(item.unitPrice||0);
+    csv+=csvRow(item.label+(item.autoKey?' [AUTO]':''),'',
+      item.autoKey&&qty>999?fmtM(qty):qty.toFixed(item.autoKey?1:0),
+      item.unit||'pcs',(item.unitPrice||0).toFixed(2),total.toFixed(2));
+  });
+  csv+=csvRow('');
+  csv+=csvRow('OLIVE INVESTMENT','','Trees','Price/tree (JD)','Zone Total (JD)','');
+  let oliveTotal=0;
+  zones.filter(z=>z.type!=='tank').forEach(z=>{
+    const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
+    oliveTotal+=cost;
+    csv+=csvRow(z.label,'',trees,price.toFixed(2),cost.toFixed(2),'');
+  });
+  const matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+  csv+=csvRow('');
+  csv+=csvRow('TOTALS');
+  csv+=csvRow('Materials','','','','',matTotal.toFixed(2));
+  csv+=csvRow('Olive Investment','','','','',oliveTotal.toFixed(2));
+  csv+=csvRow('GRAND TOTAL (JD)','','','','',(matTotal+oliveTotal).toFixed(2));
+  dlCSV(csv,`${proj}_summary_${date}.csv`);
+};
+
+// ── KEYBOARD ──────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+  if(e.key==='Escape'){if(drawPts.length>0)cancelDraw();else{if(tool!=='select')setTool('select');else clearSelection();}}
+  if(e.key==='Enter'){if(drawPts.length>=2)finishDraw();}
+  if(e.key==='p')setTool('pipe');if(e.key==='s')setTool('select');if(e.key==='z'&&!e.ctrlKey)setTool('zone');
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undo();}
+  if((e.ctrlKey||e.metaKey)&&(e.key==='y'||(e.shiftKey&&e.key==='Z'))){e.preventDefault();redo();}
+  if(e.key==='Delete'||e.key==='Backspace'){if(selPipe||selNode||selZone)deleteSelected();}
+});
+
+// ── INIT ──────────────────────────────────────────────────────────────
+setTool('select');setPSt('existing');setDia('3');
+['ex','pl','zo','el','ln'].forEach(l=>document.getElementById('lyr-'+l)?.classList.add('on'));
+map.whenReady(()=>{
+  resizeSvgs();
+  redraw();
+  setTimeout(()=>{subToProj();loadAcctFromFB();},300);
+});
+</script>
+</body>
+</html>
