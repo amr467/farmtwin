@@ -2237,7 +2237,6 @@ function migrateAcctItems(){
     {label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders'},
     {label:'Drip emitters',unit:'pcs',autoKey:'emitters'},
   ];
-  let changed=false;
   const firstManualIdx=acctItems.findIndex(i=>!i.autoKey);
   const insertAt=firstManualIdx>=0?firstManualIdx:acctItems.length;
   required.forEach(req=>{
