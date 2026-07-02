@@ -1258,6 +1258,10 @@ async function fetchZoneElevation(zone){
   }
 }
 window.fetchZoneElevation=fetchZoneElevation;
+window.fetchElevById=function(id){
+  const z=zones.find(x=>x.id===id);
+  if(z)fetchZoneElevation(z);
+};
 
 function ptInPolyLL(pt,polygon){
   // Ray-casting in lat/lng space
@@ -1808,7 +1812,7 @@ function showZoneCard(zone){
         :zone._elevError
           ?`<span style="font-size:9px;color:var(--err)">⚠ ${zone._elevError}</span>`
           :`<span style="font-size:9px;color:var(--tx3)">No slope data — pipes shown flat</span>`}
-      <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchZoneElevation(zones.find(z=>z.id==='${zone.id}'))">${zone._elevQuerying?'Fetching…':zone._slope!=null?'⊕ Re-fetch':'⊕ Fetch slope'}</button>
+      <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchElevById('${zone.id}')">${zone._elevQuerying?'Fetching…':zone._slope!=null?'⊕ Re-fetch':'⊕ Fetch slope'}</button>
     </div>`}
     <div class="pc-hint">${areaDun} dunum · ${area.toFixed(0)}m²</div>
     <div class="pc-btns">
