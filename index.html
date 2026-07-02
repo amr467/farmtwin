@@ -998,100 +998,184 @@ function drawTreeGrid(svg,zone,pxPts,col){
     zone._splitNeeded=null;
   }
 
-  // ── Sub-main inlet point (lat/lng) for pipe connection ───────────────
-  // The inlet is the uphill-most point of the sub-main — where water enters.
-  // We need this in lat/lng to search for nearby main pipes.
+  // ── Sub-main inlet point (lat/lng) ───────────────────────────────────
+  // The inlet is ALWAYS the uphill end — water enters from above.
+  // Uphill = the smPts end whose lat/lng has higher elevation proxy.
+  // Without elevation data we use the aspect direction to determine which
+  // end of the smPts array is uphill.
   if(smPts.length>=1){
-    // Uphill end of sub-main = the end with highest row-perpendicular projection
-    // (when sub-main goes uphill, the top is the inlet)
-    // Actually inlet = where water comes FROM (the main pipe side),
-    // which is the end of the sub-main closest to the main pipe.
-    // We store the sub-main endpoints in lat/lng for use in drawZoneConnections.
     const smFirst=smPts[0],smLast=smPts[smPts.length-1];
-    zone._smInletPx=smFirst; // will be used by drawZoneConnections
-    zone._smOutletPx=smLast;
-    zone._smInletLL=p2ll(smFirst.x,smFirst.y);
-    zone._smOutletLL=p2ll(smLast.x,smLast.y);
+    let inletPx,outletPx;
+    if(aspectScreenRad!==null&&slopePct>1){
+      // aspectScreenRad is downhill direction in screen space.
+      // Uphill = opposite direction.
+      const uphillRad=aspectScreenRad+Math.PI;
+      const uphillX=Math.cos(uphillRad),uphillY=Math.sin(uphillRad);
+      // Whichever smPts end projects further in uphill direction = the inlet
+      const projFirst=smFirst.x*uphillX+smFirst.y*uphillY;
+      const projLast =smLast.x *uphillX+smLast.y *uphillY;
+      inletPx =projFirst>projLast?smFirst:smLast;
+      outletPx=projFirst>projLast?smLast:smFirst;
+    } else {
+      // No slope data — default inlet at smPts[0] (arbitrary, user can tell from context)
+      inletPx=smFirst;outletPx=smLast;
+    }
+    zone._smInletPx=inletPx;
+    zone._smOutletPx=outletPx;
+    zone._smInletLL=p2ll(inletPx.x,inletPx.y);
+    zone._smOutletLL=p2ll(outletPx.x,outletPx.y);
+    zone._aspectScreenRad=aspectScreenRad;
+    zone._slopePct=slopePct;
   }
 }
 
 // ── ZONE-TO-MAIN-PIPE CONNECTIONS ─────────────────────────────────────
-// Called after drawZones() so all zone._smInletLL values are populated.
-// For each crop zone with a sub-main, finds the nearest 3" or 4" pipe
-// and draws a proposed connection line.
+// Rules:
+// 1. Only check from the sub-main INLET (uphill end) — that's where water enters.
+// 2. If a main pipe (3″+) passes within 2×rowSpacingM of the zone's uphill edge,
+//    no sub-main is needed — laterals connect directly to that pipe.
+// 3. Otherwise, find the nearest main pipe and connect perpendicularly
+//    (run feeder along slope direction or contour, not diagonally).
+// 4. The feeder route: from sub-main inlet, go straight uphill until hitting
+//    the main pipe. If the main pipe is more "across slope", go along contour.
 function drawZoneConnections(){
   if(!lyr.zo)return;
-  const mainDias=['3','4','5']; // acceptable main pipe diameters
-  const maxSearchM=300; // search radius in metres
+  const mainDias=['3','4','5'];
+  const maxSearchM=400;
 
   zones.forEach(zone=>{
     if(zone.type==='tank')return;
-    if(!zone._smInletLL&&!zone._smOutletLL)return;
+    if(!zone._smInletLL)return;
 
-    // Try both ends of sub-main, pick whichever is closer to a main pipe
-    const candidates=[zone._smInletLL,zone._smOutletLL].filter(Boolean);
-    let bestDist=Infinity,bestPt=null,bestPipe=null,bestSmLL=null;
+    const inletLL=zone._smInletLL;
+    const inletPx=zone._smInletPx;
+    const rowSpM=zone.rowSpacingM||7;
+    const slopePct=zone._slopePct||0;
+    const aspectScreenRad=zone._aspectScreenRad??null;
 
-    candidates.forEach(smLL=>{
-      pipes.filter(p=>mainDias.includes(p.dia)&&p.pts.length>=2).forEach(pipe=>{
-        for(let i=0;i<pipe.pts.length-1;i++){
-          const cp=closestOnSeg(smLL,pipe.pts[i],pipe.pts[i+1]);
-          if(cp.d<bestDist&&cp.d<maxSearchM){
-            bestDist=cp.d;bestPt=cp.pt;bestPipe=pipe;bestSmLL=smLL;
-          }
+    // Build list of candidate main pipes with their closest point to the inlet
+    const mainPipes=pipes.filter(p=>
+      mainDias.includes(p.dia)&&
+      p.pts.length>=2&&
+      p.status!=='damaged'
+    );
+    if(!mainPipes.length)return;
+
+    let bestDist=Infinity,bestConnPt=null,bestPipe=null;
+    mainPipes.forEach(pipe=>{
+      for(let i=0;i<pipe.pts.length-1;i++){
+        const cp=closestOnSeg(inletLL,pipe.pts[i],pipe.pts[i+1]);
+        if(cp.d<bestDist&&cp.d<maxSearchM){
+          bestDist=cp.d;bestConnPt=cp.pt;bestPipe=pipe;
         }
-      });
+      }
     });
+    if(!bestPipe)return;
 
-    if(!bestPt||!bestSmLL)return;
+    const connPx=ll2p(bestConnPt[0],bestConnPt[1]);
+    const directDistM=bestDist;
 
-    // Draw proposed connection line in screen space
-    const fromPx=ll2p(bestSmLL[0],bestSmLL[1]);
-    const toPx=ll2p(bestPt[0],bestPt[1]);
-    const distM=bestDist;
+    // ── Case 1: Main pipe very close to uphill edge → direct lateral connection ──
+    // If the main pipe is within 2 row spacings of the inlet, it can act as the
+    // header directly. Show laterals notionally connecting to it (no sub-main needed).
+    if(directDistM<rowSpM*2){
+      zone._connMode='direct'; // laterals connect straight to main pipe
+      zone._connDist=Math.round(directDistM);
+      zone._connDia=bestPipe.dia;
+      // Draw a "direct" marker — small green tick on the main pipe at connection point
+      const tick=mkCirc(connPx.x,connPx.y,6,'#4ade80','#fff','1.5');
+      tick.setAttribute('pointer-events','none');zSvg.appendChild(tick);
+      const tlbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+      tlbl.setAttribute('x',(connPx.x+10).toFixed(1));tlbl.setAttribute('y',(connPx.y-5).toFixed(1));
+      tlbl.setAttribute('fill','#4ade80');tlbl.setAttribute('font-size','8');
+      tlbl.setAttribute('font-family','-apple-system,sans-serif');
+      tlbl.setAttribute('pointer-events','none');
+      tlbl.textContent=`✓ Direct from ${bestPipe.dia}″`;
+      zSvg.appendChild(tlbl);
+      return;
+    }
 
-    // Dashed orange connection line
-    const conn=document.createElementNS('http://www.w3.org/2000/svg','line');
-    conn.setAttribute('x1',fromPx.x.toFixed(1));conn.setAttribute('y1',fromPx.y.toFixed(1));
-    conn.setAttribute('x2',toPx.x.toFixed(1));conn.setAttribute('y2',toPx.y.toFixed(1));
-    conn.setAttribute('stroke','#fb923c');conn.setAttribute('stroke-width','2');
-    conn.setAttribute('stroke-dasharray','6,3');conn.setAttribute('opacity','0.85');
-    conn.setAttribute('pointer-events','none');
-    zSvg.appendChild(conn);
+    // ── Case 2: Need a feeder pipe from sub-main inlet to main pipe ──────────
+    // Determine the best routing: uphill or across-slope.
+    // We compute the angle between the feeder direction and the slope direction.
+    // If the main pipe runs mostly across the slope (contour-parallel),
+    // the feeder should run uphill (perpendicular to main).
+    // If the main pipe runs mostly up the slope, feeder runs across slope.
+    // Either way the ideal feeder is a straight line that hits the main pipe
+    // at close to 90°, which the closestOnSeg already gives us.
+    // The issue is we want the ROUTE to follow terrain sensibly.
+    // Routing logic: extend from inlet in the uphill direction until we
+    // hit the perpendicular foot on the main pipe. This avoids diagonal cuts.
 
-    // Start dot (sub-main inlet)
-    const dot1=mkCirc(fromPx.x,fromPx.y,5,'#fb923c','#fff','1.5');
+    let routePts=[inletPx,connPx]; // default: straight line
+    if(aspectScreenRad!==null&&slopePct>1){
+      // Uphill direction in screen space
+      const uphillRad=aspectScreenRad+Math.PI; // opposite of downhill
+      const ux=Math.cos(uphillRad),uy=Math.sin(uphillRad);
+      // Project connPx onto the line from inletPx in uphill direction
+      const dx=connPx.x-inletPx.x,dy=connPx.y-inletPx.y;
+      const tUp=dx*ux+dy*uy; // how far uphill the main pipe is
+      // Right-angle direction (across slope = along contour)
+      const cx2=inletPx.x+ux*tUp;
+      const cy2=inletPx.y+uy*tUp;
+      // Route: go uphill first to the main pipe's elevation, then across slope
+      // Only add the elbow if it meaningfully differs from straight line
+      const elbowPx={x:cx2,y:cy2};
+      const elbowDistFromStraight=Math.hypot(
+        elbowPx.x-(inletPx.x+connPx.x)/2,
+        elbowPx.y-(inletPx.y+connPx.y)/2
+      );
+      if(elbowDistFromStraight>15){
+        // Two-segment route: up the slope, then across to the main pipe
+        routePts=[inletPx,elbowPx,connPx];
+      }
+    }
+
+    // Draw feeder route
+    const routePath=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    routePath.setAttribute('points',routePts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+    routePath.setAttribute('stroke','#fb923c');routePath.setAttribute('stroke-width','2');
+    routePath.setAttribute('stroke-dasharray','7,3');routePath.setAttribute('fill','none');
+    routePath.setAttribute('opacity','0.9');routePath.setAttribute('pointer-events','none');
+    zSvg.appendChild(routePath);
+
+    // Inlet dot
+    const dot1=mkCirc(inletPx.x,inletPx.y,5,'#fb923c','#fff','1.5');
     dot1.setAttribute('pointer-events','none');zSvg.appendChild(dot1);
 
-    // End dot (connection point on main pipe)
-    const dot2=mkCirc(toPx.x,toPx.y,5,'none','#fb923c','2');
-    dot2.setAttribute('stroke-dasharray','3,2');dot2.setAttribute('pointer-events','none');
-    zSvg.appendChild(dot2);
+    // Connection point ring on main pipe
+    const dot2=mkCirc(connPx.x,connPx.y,5,'none','#fb923c','2');
+    dot2.setAttribute('pointer-events','none');zSvg.appendChild(dot2);
 
-    // Distance label at midpoint
-    const mx=(fromPx.x+toPx.x)/2,my=(fromPx.y+toPx.y)/2;
-    // White background rect for readability
+    // Label at midpoint of route with distance and click-to-draw
+    const midPt=routePts[Math.floor(routePts.length/2)];
     const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
-    lbl.setAttribute('x',mx.toFixed(1));lbl.setAttribute('y',(my-5).toFixed(1));
+    lbl.setAttribute('x',midPt.x.toFixed(1));lbl.setAttribute('y',(midPt.y-7).toFixed(1));
     lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#fb923c');
     lbl.setAttribute('font-size','9');lbl.setAttribute('font-weight','bold');
     lbl.setAttribute('font-family','-apple-system,sans-serif');
     lbl.setAttribute('pointer-events','all');lbl.style.cursor='pointer';
     lbl.setAttribute('opacity','0.95');
-    lbl.textContent=`→ ${bestPipe.dia}″ pipe  ${distM.toFixed(0)}m`;
-    // Click to start drawing the connection pipe
+    // Feeder pipe length = straight-line distance in metres (already computed)
+    const feederM=directDistM;
+    lbl.textContent=`→ ${bestPipe.dia}″ · ${feederM.toFixed(0)}m feeder`;
+    // Click = start drawing this feeder pipe
     lbl.addEventListener('click',e=>{
       e.stopPropagation();
-      // Switch to pipe tool, planned layer, and pre-load the two endpoints
       setTool('pipe');setPSt('planned');
-      drawPts=[bestSmLL,[...bestPt]];
-      ghostPt=bestPt;
-      updateGhost();
+      drawPts=[inletLL];
+      // Add elbow point if two-segment route
+      if(routePts.length===3){
+        const elbowLL=p2ll(routePts[1].x,routePts[1].y);
+        drawPts.push(elbowLL);
+      }
+      drawPts.push([...bestConnPt]);
+      ghostPt=bestConnPt;updateGhost();
     });
     zSvg.appendChild(lbl);
 
-    // Store on zone for sidebar/card display
-    zone._connDist=Math.round(distM);
+    zone._connMode='feeder';
+    zone._connDist=Math.round(directDistM);
     zone._connDia=bestPipe.dia;
   });
 }
