@@ -2225,8 +2225,13 @@ window.renderAcct=renderAcct;
 // If saved acctItems is missing any default auto-rows (e.g. after a code update),
 // insert them before the first manual item so they appear at the top.
 function migrateAcctItems(){
+  let changed=false;
+  // Remove obsolete items
+  const before=acctItems.length;
+  acctItems=acctItems.filter(i=>i.autoKey!=='sub2in');
+  if(acctItems.length!==before)changed=true;
+
   const required=[
-    {label:'2″ sub-main pipe',unit:'m',autoKey:'sub2in'},
     {label:'1½″ sub-main pipe',unit:'m',autoKey:'sub1.5in'},
     {label:'20mm drip lateral',unit:'m',autoKey:'lat20mm'},
     {label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders'},
