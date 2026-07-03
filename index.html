@@ -893,27 +893,25 @@ function drawTreeGrid(svg,zone,pxPts,col){
     }
   });
 
-  // ── Sub-main capacity and splitting ──────────────────────────────────
-  // Max sub-main run before pressure loss becomes problematic:
-  //   1.5″: ~150m   2″: ~250m
-  // If the zone's sub-main span exceeds the threshold, split into
-  // parallel sub-mains, each fed from a separate takeoff on the main pipe.
-  const smDia=zone.subMainDia||'1.5';
-  const smMaxM=smDia==='2'?250:150;
-  const smSpanM=(maxRowProj-minRowProj)*mPerPx*slopeCorr;
-  const smPtsAll=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
-  const nSegments=Math.max(1,Math.ceil(smSpanM/smMaxM));
-
-  // Store all sub-main segments (each is an array of smEnd points)
-  const smSegments=[];
-  const segSize=Math.ceil(smPtsAll.length/nSegments);
-  for(let seg=0;seg<nSegments;seg++){
-    const segPts=smPtsAll.slice(seg*segSize,(seg+1)*segSize);
-    if(segPts.length>=1)smSegments.push(segPts);
+  // ── Draw sub-main segments ───────────────────────────────────────────
+  // Compute segments here for drawing; recomputed outside block for stored values
+  const _smPtsAllDraw=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
+  const _smSpanDraw=(_smPtsAllDraw.length>=2)?Math.hypot(
+    _smPtsAllDraw[_smPtsAllDraw.length-1].x-_smPtsAllDraw[0].x,
+    _smPtsAllDraw[_smPtsAllDraw.length-1].y-_smPtsAllDraw[0].y
+  )*mPerPx*slopeCorr:0;
+  const _smDiaDraw=zone.subMainDia||'1.5';
+  const _smMaxDraw=_smDiaDraw==='2'?250:150;
+  const _nSegDraw=Math.max(1,Math.ceil(_smSpanDraw/_smMaxDraw));
+  const _segSizeDraw=_smPtsAllDraw.length>0?Math.ceil(_smPtsAllDraw.length/_nSegDraw):1;
+  const _smSegsDraw=[];
+  for(let seg=0;seg<_nSegDraw;seg++){
+    const sp=_smPtsAllDraw.slice(seg*_segSizeDraw,(seg+1)*_segSizeDraw);
+    if(sp.length>=1)_smSegsDraw.push(sp);
   }
-
+  const _inletPxDraw=_smPtsAllDraw.length>0?_smPtsAllDraw[_smPtsAllDraw.length-1]:null;
   // Draw each sub-main segment
-  smSegments.forEach((segPts,segIdx)=>{
+  _smSegsDraw.forEach((segPts,segIdx)=>{
     if(segPts.length<2)return;
     // White glow underneath
     const glow=document.createElementNS('http://www.w3.org/2000/svg','polyline');
@@ -944,25 +942,46 @@ function drawTreeGrid(svg,zone,pxPts,col){
     }
     // Inlet dot for each segment (uphill end = last point since smPts sorted low→high)
     const inletPt=segPts[segPts.length-1];
-    const idot=mkCirc(inletPx_?inletPx_.x:inletPt.x,inletPx_?inletPx_.y:inletPt.y,4,'#00cfff','#fff','1.5');
+    const idot=mkCirc(_inletPxDraw?_inletPxDraw.x:inletPt.x,_inletPxDraw?_inletPxDraw.y:inletPt.y,4,'#00cfff','#fff','1.5');
     idot.setAttribute('pointer-events','none');svg.appendChild(idot);
     // Split label if more than one segment
-    if(nSegments>1){
+    if(_nSegDraw>1){
       const midPt=segPts[Math.floor(segPts.length/2)];
       const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
       slbl.setAttribute('x',(midPt.x+8).toFixed(1));slbl.setAttribute('y',midPt.y.toFixed(1));
       slbl.setAttribute('fill','#00cfff');slbl.setAttribute('font-size','8');
       slbl.setAttribute('font-family','-apple-system,sans-serif');slbl.setAttribute('pointer-events','none');
-      slbl.textContent=`SM${segIdx+1}/${nSegments}`;
+      slbl.textContent=`SM${segIdx+1}/${_nSegDraw}`;
       svg.appendChild(slbl);
     }
   });
 
-  // Store sub-main inlet points (one per segment) for connection routing
-  const smInletPxArr=skipGrid?[]:smSegments.map(seg=>seg[seg.length-1]);
-  const inletPx_=(!skipGrid&&smPtsAll.length>0)?smPtsAll[smPtsAll.length-1]:null;
-
   } // end if(!skipGrid) — visual drawing complete
+
+  // Sub-main metrics — computed from laterals (available even when skipGrid)
+  // When skipGrid, laterals=[] so these all default to safe zero values.
+  const smDia=zone.subMainDia||'1.5';
+  const smMaxM=smDia==='2'?250:150;
+  const smSpanM=laterals.length>=2?(()=>{
+    // Recompute span from lateral midpoint projections
+    let mn=Infinity,mx2=-Infinity;
+    laterals.forEach(l=>{
+      const midX=(l.s.x+l.e.x)/2,midY=(l.s.y+l.e.y)/2;
+      const p=midX*pux+midY*puy;
+      if(p<mn)mn=p;if(p>mx2)mx2=p;
+    });
+    return Math.max(0,(mx2-mn)*mPerPx*slopeCorr);
+  })():0;
+  const nSegments=smSpanM>0?Math.max(1,Math.ceil(smSpanM/smMaxM)):1;
+  const smPtsAll=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
+  const segSize=smPtsAll.length>0?Math.ceil(smPtsAll.length/nSegments):1;
+  const smSegments=[];
+  for(let seg=0;seg<nSegments;seg++){
+    const segPts=smPtsAll.slice(seg*segSize,(seg+1)*segSize);
+    if(segPts.length>=1)smSegments.push(segPts);
+  }
+  const smInletPxArr=smSegments.map(seg=>seg[seg.length-1]);
+  const inletPx_=smPtsAll.length>0?smPtsAll[smPtsAll.length-1]:null;
 
   // ── Slope info label (always shown regardless of zoom) ───────────────
   if(slopePct>0){
