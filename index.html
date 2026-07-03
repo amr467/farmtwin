@@ -1043,13 +1043,18 @@ function drawTreeGrid(svg,zone,pxPts,col){
   }
 
   // ── Store computed values ─────────────────────────────────────────────
-  const rowCount=Object.keys(rowPts).filter(k=>rowPts[k].length>0).length;
-  zone._treeCount=dotCount;
-  zone._rowCount=rowCount;
-  zone._emitterCount=dotCount*(zone.emitters||1);
-  zone._lateralM=totalLateralPx*mPerPx*slopeCorr;
-  zone._subMainM=Math.max(0,smSpanM);
-  zone._smSegments=smSpanM>0?Math.max(1,Math.ceil(smSpanM/smMaxM)):1;
+  // When skipGrid is true (zoomed in too close to render dots), preserve
+  // previously computed values so accounting doesn't show 0.
+  if(!skipGrid){
+    const rowCount=Object.keys(rowPts).filter(k=>rowPts[k].length>0).length;
+    zone._treeCount=dotCount;
+    zone._rowCount=rowCount;
+    zone._emitterCount=dotCount*(zone.emitters||1);
+    zone._lateralM=totalLateralPx*mPerPx*slopeCorr;
+    zone._subMainM=Math.max(0,smSpanM);
+    zone._smSegments=smSpanM>0?Math.max(1,Math.ceil(smSpanM/smMaxM)):1;
+  }
+  // Always update aspect/slope (not zoom-dependent)
   zone._aspectScreenRad=aspectScreenRad;
   zone._slopePct=slopePct;
 }
@@ -2194,13 +2199,43 @@ function toggleAcct(){
   const isOpen=panel.classList.toggle('open');
   document.getElementById('acct-btn').classList.toggle('on',isOpen);
   if(isOpen){
-    // Force full redraw first so zone transient values (_lateralM etc.) are populated
     redraw();
-    // Give redraw time to complete before rendering accounting
-    setTimeout(renderAcct,150);
+    // Wait for redraw to populate zone transient fields, then render
+    setTimeout(()=>{
+      // If zones still have no data, do one more redraw
+      const hasZoneData=zones.some(z=>z.type!=='tank'&&z._lateralM>0);
+      if(!hasZoneData)redraw();
+      renderAcct();
+    },200);
   }
 }
 window.toggleAcct=toggleAcct;
+
+// ── Drag-to-reorder accounting items ─────────────────────────────────
+let acctDragIdx=null;
+window.acctDragStart=function(e,idx){
+  acctDragIdx=idx;
+  e.dataTransfer.effectAllowed='move';
+  e.currentTarget.style.opacity='0.4';
+};
+window.acctDragOver=function(e){
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  e.currentTarget.style.background='var(--sur3)';
+};
+window.acctDrop=function(e,targetIdx){
+  e.preventDefault();
+  e.currentTarget.style.background='';
+  if(acctDragIdx===null||acctDragIdx===targetIdx)return;
+  const moved=acctItems.splice(acctDragIdx,1)[0];
+  acctItems.splice(targetIdx,0,moved);
+  acctDragIdx=null;
+  pushAcctToFB();renderAcct();
+};
+window.acctDragEnd=function(e){
+  e.currentTarget.style.opacity='';
+  e.currentTarget.style.background='';
+  acctDragIdx=null;
+};
 
 function renderAcct(){
   const body=document.getElementById('acct-body');
@@ -2212,25 +2247,43 @@ function renderAcct(){
   else{migrateAcctItems();}
 
   let h='';
-  // ── Materials & Components ──────────────────────────────────────────
-  h+=`<div class="acct-sec"><div class="acct-sec-h">Materials &amp; Components</div>
-  <table class="acct-table">
-  <tr><th style="width:36%">Item</th><th>Unit</th><th class="acct-num">Qty</th><th class="acct-num">Unit price (JD)</th><th class="acct-num">Total (JD)</th><th></th></tr>`;
   let matTotal=0;
-  // Group by category for subtotals
-  const mainPipeItems=acctItems.filter(i=>i.autoKey?.startsWith('mainpipe-'));
-  const irrigItems=acctItems.filter(i=>['sub1.5in','sub2in','lat20mm','feeders','emitters'].includes(i.autoKey));
-  const manualItems=acctItems.filter(i=>!i.autoKey);
+  let subMain=0,subIrrig=0,subOther=0;
+  const fmtQty=(item,qty)=>{
+    if(!item.autoKey)return String(qty||0);
+    const isM=item.autoKey.startsWith('mainpipe-')||['lat20mm','sub1.5in','sub2in'].includes(item.autoKey);
+    const isPcs=['feeders','emitters'].includes(item.autoKey);
+    if(isM)return qty>999?fmtM(qty):qty.toFixed(0)+'m';
+    if(isPcs)return Math.round(qty).toLocaleString()+' pcs';
+    return qty.toFixed(1);
+  };
 
-  const renderRow=(item,i)=>{
+  // ── Materials & Components ──────────────────────────────────────────
+  h+=`<div class="acct-sec"><div class="acct-sec-h">Materials &amp; Components
+    <span style="font-size:9px;font-weight:400;color:var(--tx3);margin-left:6px">drag ⠿ to reorder</span>
+  </div>
+  <table class="acct-table">
+  <tr>
+    <th style="width:16px"></th>
+    <th style="width:34%">Item</th><th>Unit</th>
+    <th class="acct-num">Qty</th>
+    <th class="acct-num">Unit price (JD)</th>
+    <th class="acct-num">Total (JD)</th>
+    <th></th>
+  </tr>`;
+  acctItems.forEach((item,i)=>{
     const qty=acctAutoQty(item);
     const total=qty*(item.unitPrice||0);
     matTotal+=total;
-    const qtyDisp=item.autoKey?(qty>999?fmtM(qty):qty.toFixed(1)):(qty||0);
+    if(item.autoKey?.startsWith('mainpipe-'))subMain+=total;
+    else if(['lat20mm','sub1.5in','sub2in','feeders','emitters'].includes(item.autoKey))subIrrig+=total;
+    else subOther+=total;
+    const qtyDisp=fmtQty(item,qty);
     const autoTag=item.autoKey?`<span style="font-size:8px;color:var(--info);margin-left:3px">AUTO</span>`:'';
-    return `<tr>
+    h+=`<tr draggable="true" ondragstart="acctDragStart(event,${i})" ondragover="acctDragOver(event)" ondrop="acctDrop(event,${i})" ondragend="acctDragEnd(event)">
+      <td style="color:var(--tx3);cursor:grab;font-size:14px;user-select:none;text-align:center">⠿</td>
       <td>${item.label}${autoTag}</td>
-      <td style="color:var(--tx3)">${item.unit||''}</td>
+      <td style="color:var(--tx3);font-size:10px">${item.unit||''}</td>
       <td class="acct-num">${item.autoKey
         ?`<span style="color:var(--tx2)">${qtyDisp}</span>`
         :`<input class="acct-inp" type="number" value="${qty}" min="0" onchange="setAcctQty(${i},this.value)">`}</td>
@@ -2238,59 +2291,12 @@ function renderAcct(){
       <td class="acct-num" style="color:${total>0?'var(--ok)':'var(--tx3)'};font-weight:600">${total>0?fmtJD(total):'—'}</td>
       <td><button onclick="removeAcctItem(${i})" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px">×</button></td>
     </tr>`;
-  };
-  const subRow=(label,val,span=5)=>
-    `<tr style="background:var(--sur3)"><td colspan="${span}" style="padding:4px 6px;font-size:10px;color:var(--tx3)">${label}</td>
-     <td class="acct-num" style="padding:4px 6px;font-weight:700;color:var(--ok)">${fmtJD(val)}</td></tr>`;
-
-  if(mainPipeItems.length){
-    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Main distribution pipes</td></tr>`;
-    let sub=0;
-    mainPipeItems.forEach(item=>{
-      const idx=acctItems.indexOf(item);
-      h+=renderRow(item,idx);
-      sub+=acctAutoQty(item)*(item.unitPrice||0);
-    });
-    if(sub>0)h+=subRow('Subtotal — main pipes',sub);
-  }
-
-  if(irrigItems.length){
-    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Irrigation pipes &amp; fittings</td></tr>`;
-    let sub=0;
-    // Pipe lengths summary
-    const latM=acctAutoQty({autoKey:'lat20mm'});
-    const sm15M=acctAutoQty({autoKey:'sub1.5in'});
-    const feedN=acctAutoQty({autoKey:'feeders'});
-    const emitN=acctAutoQty({autoKey:'emitters'});
-    irrigItems.forEach(item=>{
-      const idx=acctItems.indexOf(item);
-      h+=renderRow(item,idx);
-      sub+=acctAutoQty(item)*(item.unitPrice||0);
-    });
-    // Irrigation summary line
-    const irrigSummary=[];
-    if(latM>0)irrigSummary.push(`${fmtM(latM)} lateral`);
-    if(sm15M>0)irrigSummary.push(`${fmtM(sm15M)} sub-main`);
-    if(feedN>0)irrigSummary.push(`${feedN.toFixed(0)} tees`);
-    if(emitN>0)irrigSummary.push(`${emitN.toLocaleString()} emitters`);
-    if(irrigSummary.length)h+=`<tr style="background:var(--sur2)"><td colspan="6" style="padding:2px 6px;font-size:9px;color:var(--tx3)">${irrigSummary.join(' · ')}</td></tr>`;
-    if(sub>0)h+=subRow('Subtotal — irrigation',sub);
-  }
-
-  if(manualItems.length){
-    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Other costs</td></tr>`;
-    let sub=0;
-    manualItems.forEach(item=>{
-      const idx=acctItems.indexOf(item);
-      h+=renderRow(item,idx);
-      sub+=acctAutoQty(item)*(item.unitPrice||0);
-    });
-    if(sub>0)h+=subRow('Subtotal — other',sub);
-  }
-
-  // Recalculate matTotal properly (renderRow accumulated it)
-  matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
-
+  });
+  const subtotalParts=[];
+  if(subMain>0)subtotalParts.push(`Main pipes ${fmtJD(subMain)}`);
+  if(subIrrig>0)subtotalParts.push(`Irrigation ${fmtJD(subIrrig)}`);
+  if(subOther>0)subtotalParts.push(`Other ${fmtJD(subOther)}`);
+  if(subtotalParts.length>1)h+=`<tr style="background:var(--sur2)"><td colspan="7" style="padding:3px 6px;font-size:9px;color:var(--tx3)">${subtotalParts.join(' · ')}</td></tr>`;
   h+=`</table>
   <div class="acct-add" style="margin-top:8px">
     <input id="an-lbl" placeholder="Item name" style="flex:2">
@@ -2303,6 +2309,7 @@ function renderAcct(){
     <span style="color:var(--tx2);font-weight:600">Materials total</span>
     <span style="color:var(--ok);font-weight:700">${fmtJD(matTotal)}</span>
   </div></div>`;
+
 
   // ── Olive Investment ────────────────────────────────────────────────
   const cropZones=zones.filter(z=>z.type!=='tank');
@@ -2494,7 +2501,7 @@ window.exportSummaryCSV=function(){
   acctItems.forEach(item=>{
     const qty=acctAutoQty(item),total=qty*(item.unitPrice||0);
     csv+=csvRow(item.label+(item.autoKey?' [AUTO]':''),'',
-      item.autoKey&&qty>999?fmtM(qty):qty.toFixed(item.autoKey?1:0),
+      item.autoKey&&qty>999&&item.unit==='m'?fmtM(qty):qty.toFixed(item.autoKey?0:0),
       item.unit||'pcs',(item.unitPrice||0).toFixed(2),total.toFixed(2));
   });
   csv+=csvRow('');
