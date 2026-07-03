@@ -760,12 +760,14 @@ function drawZones(){
 function drawTreeGrid(svg,zone,pxPts,col){
   if(!zone.rowSpacingM||!zone.treeSpacingM)return;
 
+  // Row direction unit vectors
   const angleDeg=zone.rowAngleDeg??15;
   const rowScreenRad=(-90-angleDeg)*Math.PI/180;
   const perpScreenRad=rowScreenRad+Math.PI/2;
   const rux=Math.cos(rowScreenRad),ruy=Math.sin(rowScreenRad);
   const pux=Math.cos(perpScreenRad),puy=Math.sin(perpScreenRad);
 
+  // Metres-per-pixel at current zoom
   const ref=zone.polygon[0];
   const refPx=ll2p(ref[0],ref[1]);
   const refR=ll2p(ref[0],ref[1]+0.001),refD=ll2p(ref[0]+0.001,ref[1]);
@@ -774,25 +776,12 @@ function drawTreeGrid(svg,zone,pxPts,col){
     hav(ref,[ref[0],ref[1]+0.001])/Math.abs(refR.x-refPx.x)+
     hav(ref,[ref[0]+0.001,ref[1]])/Math.abs(refD.y-refPx.y)
   )/2;
+
   const rowStepPx=zone.treeSpacingM/mPerPx;
   const perpStepPx=zone.rowSpacingM/mPerPx;
-  // At very high zoom steps become huge — skip the grid dots but still draw
-  // labels, slope info, fetch button, and compute stored values.
   const skipGrid=rowStepPx<4||perpStepPx<4||rowStepPx>500||perpStepPx>500;
 
-  // These are needed both inside and outside the skipGrid block
-  const slopePct=zone._slope||0;
-  const aspectDeg=zone._aspect??null;
-  const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
-  let aspectScreenRad=null;
-  let uphillX=0,uphillY=-1;
-  if(aspectDeg!==null&&slopePct>1){
-    const uphillDeg=(aspectDeg+180)%360;
-    aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
-    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
-  }
-  const isFlat=slopePct<2;
-
+  // Centroid and diagonal (always needed for labels)
   const cx=pxPts.reduce((a,p)=>a+p.x,0)/pxPts.length;
   const cy=pxPts.reduce((a,p)=>a+p.y,0)/pxPts.length;
   const diagLen=Math.hypot(
@@ -800,17 +789,31 @@ function drawTreeGrid(svg,zone,pxPts,col){
     Math.max(...pxPts.map(p=>p.y))-Math.min(...pxPts.map(p=>p.y))
   )*0.8;
 
-  // Only compute and draw the grid when zoom level makes it renderable
-  let dotCount=zone._treeCount||0; // fallback to cached value when skipGrid
-  let laterals=[],totalLateralPx=0,minRowProj=Infinity,maxRowProj=-Infinity;
+  // Slope data (always needed)
+  const slopePct=zone._slope||0;
+  const aspectDeg=zone._aspect??null;
+  const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
+  let aspectScreenRad=null,uphillX=0,uphillY=-1;
+  if(aspectDeg!==null&&slopePct>1){
+    const uphillDeg=(aspectDeg+180)%360;
+    aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
+    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
+  }
+  const isFlat=slopePct<2;
+
+  // ── Grid and layout computation ───────────────────────────────────────
+  // Always computed — used for stored values even when skipGrid
+  let dotCount=zone._treeCount||0;
+  let totalLateralPx=0,minRowProj=Infinity,maxRowProj=-Infinity;
   const rowPts={};
+  const laterals=[];
 
   if(!skipGrid){
+    // Tree dot grid
     const g=document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('pointer-events','none');
     const maxSteps=Math.ceil(diagLen/Math.min(rowStepPx,perpStepPx))+2;
     dotCount=0;
-
     for(let ri=-maxSteps;ri<=maxSteps;ri++){
       for(let ti=-maxSteps;ti<=maxSteps;ti++){
         const sx=cx+ti*rowStepPx*rux+ri*perpStepPx*pux;
@@ -825,20 +828,22 @@ function drawTreeGrid(svg,zone,pxPts,col){
         rowPts[ri].push({x:sx,y:sy});
       }
     }
+    svg.appendChild(g);
 
+    // Build laterals from row points
     Object.entries(rowPts).forEach(([riStr,pts])=>{
       if(!pts.length)return;
       pts.sort((a,b)=>(a.x*rux+a.y*ruy)-(b.x*rux+b.y*ruy));
       const start=pts[0],end=pts[pts.length-1];
       const spanPx=pts.length>=2?Math.hypot(end.x-start.x,end.y-start.y):0;
       totalLateralPx+=spanPx+rowStepPx;
-      const extStart={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
-      const extEnd  ={x:end.x  +rux*rowStepPx*0.5,y:end.y  +ruy*rowStepPx*0.5};
-      const s=ptInPolyPx(extStart,pxPts)?extStart:start;
-      const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
+      const extS={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
+      const extE={x:end.x+rux*rowStepPx*0.5,y:end.y+ruy*rowStepPx*0.5};
+      const s=ptInPolyPx(extS,pxPts)?extS:start;
+      const e=ptInPolyPx(extE,pxPts)?extE:end;
       let smEnd,smMid=null;
       if(isFlat){smMid={x:(s.x+e.x)/2,y:(s.y+e.y)/2};smEnd=smMid;}
-      else{const sPU=s.x*uphillX+s.y*uphillY,ePU=e.x*uphillX+e.y*uphillY;smEnd=sPU>ePU?s:e;}
+      else{const sP=s.x*uphillX+s.y*uphillY,eP=e.x*uphillX+e.y*uphillY;smEnd=sP>eP?s:e;}
       const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
       const proj=midX*pux+midY*puy;
       if(proj<minRowProj)minRowProj=proj;
@@ -846,152 +851,166 @@ function drawTreeGrid(svg,zone,pxPts,col){
       laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
     });
 
-    svg.appendChild(g);
-
-  // 20mm lateral color — distinct amber so they stand out from zone fill and tree dots
-  const latCol='#fde68a';
-
-  // Draw laterals (20mm drip lines)
-  laterals.forEach(lat=>{
-    if(lat.pts.length<1)return;
-    if(lat.isFlat&&lat.smMid){
-      const drawHalf=(from,to)=>{
-        const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-        line.setAttribute('x1',from.x.toFixed(1));line.setAttribute('y1',from.y.toFixed(1));
-        line.setAttribute('x2',to.x.toFixed(1));line.setAttribute('y2',to.y.toFixed(1));
-        line.setAttribute('stroke',latCol);line.setAttribute('stroke-width','1.5');
-        line.setAttribute('opacity','0.75');line.setAttribute('pointer-events','none');
-        svg.appendChild(line);
-        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len<8)return;
-        const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
-        const ax=from.x+ux*len*0.6,ay=from.y+uy*len*0.6;
-        const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
-        arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
-        arr.setAttribute('fill',latCol);arr.setAttribute('opacity','0.8');arr.setAttribute('pointer-events','none');
-        svg.appendChild(arr);
-      };
-      drawHalf(lat.smMid,lat.s);drawHalf(lat.smMid,lat.e);
-    } else {
-      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-      line.setAttribute('x1',lat.s.x.toFixed(1));line.setAttribute('y1',lat.s.y.toFixed(1));
-      line.setAttribute('x2',lat.e.x.toFixed(1));line.setAttribute('y2',lat.e.y.toFixed(1));
-      line.setAttribute('stroke',latCol);line.setAttribute('stroke-width','1.5');
-      line.setAttribute('opacity','0.75');line.setAttribute('pointer-events','none');
-      svg.appendChild(line);
-      if(lat.pts.length>=2){
-        const from=lat.smEnd===lat.s?lat.s:lat.e;
-        const to  =lat.smEnd===lat.s?lat.e:lat.s;
-        const len=Math.hypot(to.x-from.x,to.y-from.y);if(len>4){
+    // Draw 20mm laterals (amber)
+    const latCol='#fde68a';
+    laterals.forEach(lat=>{
+      if(!lat.pts.length)return;
+      if(lat.isFlat&&lat.smMid){
+        [[lat.smMid,lat.s],[lat.smMid,lat.e]].forEach(([from,to])=>{
+          const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+          ln.setAttribute('x1',from.x.toFixed(1));ln.setAttribute('y1',from.y.toFixed(1));
+          ln.setAttribute('x2',to.x.toFixed(1));ln.setAttribute('y2',to.y.toFixed(1));
+          ln.setAttribute('stroke',latCol);ln.setAttribute('stroke-width','1.5');
+          ln.setAttribute('opacity','0.75');ln.setAttribute('pointer-events','none');
+          svg.appendChild(ln);
+          const len=Math.hypot(to.x-from.x,to.y-from.y);if(len<8)return;
           const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
-          const ax=from.x+ux*len*0.4,ay=from.y+uy*len*0.4;
+          const ax=from.x+ux*len*0.6,ay=from.y+uy*len*0.6;
           const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
           arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
           arr.setAttribute('fill',latCol);arr.setAttribute('opacity','0.8');arr.setAttribute('pointer-events','none');
           svg.appendChild(arr);
+        });
+      } else {
+        const ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+        ln.setAttribute('x1',lat.s.x.toFixed(1));ln.setAttribute('y1',lat.s.y.toFixed(1));
+        ln.setAttribute('x2',lat.e.x.toFixed(1));ln.setAttribute('y2',lat.e.y.toFixed(1));
+        ln.setAttribute('stroke',latCol);ln.setAttribute('stroke-width','1.5');
+        ln.setAttribute('opacity','0.75');ln.setAttribute('pointer-events','none');
+        svg.appendChild(ln);
+        if(lat.pts.length>=2){
+          const from=lat.smEnd===lat.s?lat.s:lat.e;
+          const to=lat.smEnd===lat.s?lat.e:lat.s;
+          const len=Math.hypot(to.x-from.x,to.y-from.y);if(len>4){
+            const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
+            const ax=from.x+ux*len*0.4,ay=from.y+uy*len*0.4;
+            const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+            arr.setAttribute('points',`${ax+ux*4},${ay+uy*4} ${ax-ux*3-uy*3},${ay-uy*3+ux*3} ${ax-ux*3+uy*3},${ay-uy*3-ux*3}`);
+            arr.setAttribute('fill',latCol);arr.setAttribute('opacity','0.8');arr.setAttribute('pointer-events','none');
+            svg.appendChild(arr);
+          }
         }
       }
-    }
-  });
+    });
 
-  // ── Draw sub-main segments ───────────────────────────────────────────
-  // Compute segments here for drawing; recomputed outside block for stored values
-  const _smPtsAllDraw=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
-  const _smSpanDraw=(_smPtsAllDraw.length>=2)?Math.hypot(
-    _smPtsAllDraw[_smPtsAllDraw.length-1].x-_smPtsAllDraw[0].x,
-    _smPtsAllDraw[_smPtsAllDraw.length-1].y-_smPtsAllDraw[0].y
-  )*mPerPx*slopeCorr:0;
-  const _smDiaDraw=zone.subMainDia||'1.5';
-  const _smMaxDraw=_smDiaDraw==='2'?250:150;
-  const _nSegDraw=Math.max(1,Math.ceil(_smSpanDraw/_smMaxDraw));
-  const _segSizeDraw=_smPtsAllDraw.length>0?Math.ceil(_smPtsAllDraw.length/_nSegDraw):1;
-  const _smSegsDraw=[];
-  for(let seg=0;seg<_nSegDraw;seg++){
-    const sp=_smPtsAllDraw.slice(seg*_segSizeDraw,(seg+1)*_segSizeDraw);
-    if(sp.length>=1)_smSegsDraw.push(sp);
-  }
-  const _inletPxDraw=_smPtsAllDraw.length>0?_smPtsAllDraw[_smPtsAllDraw.length-1]:null;
-  // Draw each sub-main segment
-  _smSegsDraw.forEach((segPts,segIdx)=>{
-    if(segPts.length<2)return;
-    // White glow underneath
-    const glow=document.createElementNS('http://www.w3.org/2000/svg','polyline');
-    glow.setAttribute('points',segPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-    glow.setAttribute('stroke','#ffffff');glow.setAttribute('stroke-width','4');
-    glow.setAttribute('fill','none');glow.setAttribute('opacity','0.6');
-    glow.setAttribute('stroke-linecap','round');glow.setAttribute('stroke-linejoin','round');
-    glow.setAttribute('pointer-events','none');
-    svg.appendChild(glow);
-    // Cyan overlay
-    const smLine=document.createElementNS('http://www.w3.org/2000/svg','polyline');
-    smLine.setAttribute('points',segPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
-    smLine.setAttribute('stroke','#00cfff');smLine.setAttribute('stroke-width','2');
-    smLine.setAttribute('fill','none');smLine.setAttribute('opacity','0.95');
-    smLine.setAttribute('stroke-linecap','round');smLine.setAttribute('stroke-linejoin','round');
-    smLine.setAttribute('pointer-events','none');
-    svg.appendChild(smLine);
-    // Flow arrows
-    for(let i=0;i<segPts.length-1;i++){
-      const a=segPts[i],b=segPts[i+1];
-      const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
-      const len=Math.hypot(b.x-a.x,b.y-a.y);if(len<8)continue;
-      const ux=(b.x-a.x)/len,uy=(b.y-a.y)/len;
-      const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
-      arr.setAttribute('points',`${mx+ux*5},${my+uy*5} ${mx-ux*4-uy*4},${my-uy*4+ux*4} ${mx-ux*4+uy*4},${my-uy*4-ux*4}`);
-      arr.setAttribute('fill','#00cfff');arr.setAttribute('opacity','0.9');arr.setAttribute('pointer-events','none');
-      svg.appendChild(arr);
+    // Draw sub-main segments (cyan)
+    const smPtsAll=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
+    const smSpanDraw=smPtsAll.length>=2?Math.max(0,(maxRowProj-minRowProj)):0;
+    const smDiaDraw=zone.subMainDia||'1.5';
+    const smMaxDraw=smDiaDraw==='2'?250:150;
+    const smSpanMDraw=smSpanDraw*mPerPx*slopeCorr;
+    const nSegsDraw=smSpanMDraw>0?Math.max(1,Math.ceil(smSpanMDraw/smMaxDraw)):1;
+    const segSizeDraw=smPtsAll.length>0?Math.ceil(smPtsAll.length/nSegsDraw):1;
+    const smSegsDraw=[];
+    for(let seg=0;seg<nSegsDraw;seg++){
+      const sp=smPtsAll.slice(seg*segSizeDraw,(seg+1)*segSizeDraw);
+      if(sp.length>=1)smSegsDraw.push(sp);
     }
-    // Inlet dot for each segment (uphill end = last point since smPts sorted low→high)
-    const inletPt=segPts[segPts.length-1];
-    const idot=mkCirc(_inletPxDraw?_inletPxDraw.x:inletPt.x,_inletPxDraw?_inletPxDraw.y:inletPt.y,4,'#00cfff','#fff','1.5');
-    idot.setAttribute('pointer-events','none');svg.appendChild(idot);
-    // Split label if more than one segment
-    if(_nSegDraw>1){
-      const midPt=segPts[Math.floor(segPts.length/2)];
-      const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
-      slbl.setAttribute('x',(midPt.x+8).toFixed(1));slbl.setAttribute('y',midPt.y.toFixed(1));
-      slbl.setAttribute('fill','#00cfff');slbl.setAttribute('font-size','8');
-      slbl.setAttribute('font-family','-apple-system,sans-serif');slbl.setAttribute('pointer-events','none');
-      slbl.textContent=`SM${segIdx+1}/${_nSegDraw}`;
-      svg.appendChild(slbl);
-    }
-  });
+    smSegsDraw.forEach((segPts,segIdx)=>{
+      if(segPts.length<2)return;
+      const glow=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+      glow.setAttribute('points',segPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+      glow.setAttribute('stroke','#ffffff');glow.setAttribute('stroke-width','4');
+      glow.setAttribute('fill','none');glow.setAttribute('opacity','0.6');
+      glow.setAttribute('stroke-linecap','round');glow.setAttribute('stroke-linejoin','round');
+      glow.setAttribute('pointer-events','none');svg.appendChild(glow);
+      const smLine=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+      smLine.setAttribute('points',segPts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '));
+      smLine.setAttribute('stroke','#00cfff');smLine.setAttribute('stroke-width','2');
+      smLine.setAttribute('fill','none');smLine.setAttribute('opacity','0.95');
+      smLine.setAttribute('stroke-linecap','round');smLine.setAttribute('stroke-linejoin','round');
+      smLine.setAttribute('pointer-events','none');svg.appendChild(smLine);
+      for(let i=0;i<segPts.length-1;i++){
+        const a=segPts[i],b=segPts[i+1];
+        const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+        const len=Math.hypot(b.x-a.x,b.y-a.y);if(len<8)continue;
+        const ux=(b.x-a.x)/len,uy=(b.y-a.y)/len;
+        const arr=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        arr.setAttribute('points',`${mx+ux*5},${my+uy*5} ${mx-ux*4-uy*4},${my-uy*4+ux*4} ${mx-ux*4+uy*4},${my-uy*4-ux*4}`);
+        arr.setAttribute('fill','#00cfff');arr.setAttribute('opacity','0.9');arr.setAttribute('pointer-events','none');
+        svg.appendChild(arr);
+      }
+      if(nSegsDraw>1){
+        const midPt=segPts[Math.floor(segPts.length/2)];
+        const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+        slbl.setAttribute('x',(midPt.x+8).toFixed(1));slbl.setAttribute('y',midPt.y.toFixed(1));
+        slbl.setAttribute('fill','#00cfff');slbl.setAttribute('font-size','8');
+        slbl.setAttribute('font-family','-apple-system,sans-serif');slbl.setAttribute('pointer-events','none');
+        slbl.textContent=`SM${segIdx+1}/${nSegsDraw}`;svg.appendChild(slbl);
+      }
+    });
 
-  } // end if(!skipGrid) — visual drawing complete
+    // Store inlet points for connection routing (in lat/lng)
+    const inletForLL=smPtsAll.length>0?(()=>{
+      if(aspectScreenRad!==null&&slopePct>1){
+        const ur=aspectScreenRad+Math.PI;
+        const ux2=Math.cos(ur),uy2=Math.sin(ur);
+        const pF=smPtsAll[0].x*ux2+smPtsAll[0].y*uy2;
+        const pL=smPtsAll[smPtsAll.length-1].x*ux2+smPtsAll[smPtsAll.length-1].y*uy2;
+        return pF>pL?smPtsAll[0]:smPtsAll[smPtsAll.length-1];
+      }
+      return smPtsAll[smPtsAll.length-1];
+    })():null;
+    zone._smInletLL=inletForLL?p2ll(inletForLL.x,inletForLL.y):null;
+    zone._smInletLLs=smSegsDraw.map(seg=>{
+      const last=seg[seg.length-1];return p2ll(last.x,last.y);
+    });
+    zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
+  } // end if(!skipGrid)
 
-  // Sub-main metrics — computed from laterals (available even when skipGrid)
-  // When skipGrid, laterals=[] so these all default to safe zero values.
-  const smDia=zone.subMainDia||'1.5';
-  const smMaxM=smDia==='2'?250:150;
+  // ── Zone split suggestion ─────────────────────────────────────────────
   const smSpanM=laterals.length>=2?(()=>{
-    // Recompute span from lateral midpoint projections
     let mn=Infinity,mx2=-Infinity;
     laterals.forEach(l=>{
       const midX=(l.s.x+l.e.x)/2,midY=(l.s.y+l.e.y)/2;
-      const p=midX*pux+midY*puy;
-      if(p<mn)mn=p;if(p>mx2)mx2=p;
+      const p=midX*pux+midY*puy;if(p<mn)mn=p;if(p>mx2)mx2=p;
     });
     return Math.max(0,(mx2-mn)*mPerPx*slopeCorr);
-  })():0;
-  const nSegments=smSpanM>0?Math.max(1,Math.ceil(smSpanM/smMaxM)):1;
-  const smPtsAll=laterals.map(l=>l.smEnd).sort((a,b)=>(a.x*pux+a.y*puy)-(b.x*pux+b.y*puy));
-  const segSize=smPtsAll.length>0?Math.ceil(smPtsAll.length/nSegments):1;
-  const smSegments=[];
-  for(let seg=0;seg<nSegments;seg++){
-    const segPts=smPtsAll.slice(seg*segSize,(seg+1)*segSize);
-    if(segPts.length>=1)smSegments.push(segPts);
-  }
-  const smInletPxArr=smSegments.map(seg=>seg[seg.length-1]);
-  const inletPx_=smPtsAll.length>0?smPtsAll[smPtsAll.length-1]:null;
+  })():zone._subMainM||0;
+  const smDia=zone.subMainDia||'1.5';
+  const smMaxM=smDia==='2'?250:150;
+  if(slopePct>0.5&&laterals.length>=2){
+    const maxLatPx=200/slopePct/mPerPx;
+    const longestPx=Math.max(...laterals.map(l=>Math.hypot(l.e.x-l.s.x,l.e.y-l.s.y)));
+    if(longestPx>maxLatPx){
+      const nBands=Math.ceil(longestPx/maxLatPx);
+      const sorted=[...laterals].sort((a,b)=>{
+        const pa=(a.s.x+a.e.x)/2*pux+(a.s.y+a.e.y)/2*puy;
+        const pb=(b.s.x+b.e.x)/2*pux+(b.s.y+b.e.y)/2*puy;
+        return pa-pb;
+      });
+      for(let band=1;band<nBands;band++){
+        const si=Math.round(sorted.length*band/nBands);
+        if(si<=0||si>=sorted.length)continue;
+        const latA=sorted[si-1],latB=sorted[si];
+        const midAx=(latA.s.x+latA.e.x)/2,midAy=(latA.s.y+latA.e.y)/2;
+        const midBx=(latB.s.x+latB.e.x)/2,midBy=(latB.s.y+latB.e.y)/2;
+        const sCx=(midAx+midBx)/2,sCy=(midAy+midBy)/2;
+        const sl=document.createElementNS('http://www.w3.org/2000/svg','line');
+        sl.setAttribute('x1',(sCx-rux*diagLen*1.2).toFixed(1));sl.setAttribute('y1',(sCy-ruy*diagLen*1.2).toFixed(1));
+        sl.setAttribute('x2',(sCx+rux*diagLen*1.2).toFixed(1));sl.setAttribute('y2',(sCy+ruy*diagLen*1.2).toFixed(1));
+        sl.setAttribute('stroke','#facc15');sl.setAttribute('stroke-width','2');
+        sl.setAttribute('stroke-dasharray','8,4');sl.setAttribute('opacity','0.9');
+        sl.setAttribute('pointer-events','none');svg.appendChild(sl);
+        const bLbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+        bLbl.setAttribute('x',sCx.toFixed(1));bLbl.setAttribute('y',(sCy-6).toFixed(1));
+        bLbl.setAttribute('text-anchor','middle');bLbl.setAttribute('fill','#facc15');
+        bLbl.setAttribute('font-size','8');bLbl.setAttribute('font-family','-apple-system,sans-serif');
+        bLbl.setAttribute('pointer-events','none');bLbl.setAttribute('opacity','0.95');
+        bLbl.textContent=`✂ Split ${band}/${nBands-1}`;svg.appendChild(bLbl);
+      }
+      zone._splitNeeded=nBands;
+    } else {zone._splitNeeded=null;}
+  } else {zone._splitNeeded=null;}
 
-  // ── Slope info label (always shown regardless of zoom) ───────────────
+  // ── Slope info label ─────────────────────────────────────────────────
   if(slopePct>0){
     const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
     slbl.setAttribute('x',cx);slbl.setAttribute('y',cy+14);
     slbl.setAttribute('text-anchor','middle');slbl.setAttribute('fill','#facc15');
     slbl.setAttribute('font-size','9');slbl.setAttribute('font-family','-apple-system,sans-serif');
     slbl.setAttribute('pointer-events','none');slbl.setAttribute('opacity','0.9');
-    const aspectName=aspectDeg!==null?compassDir(aspectDeg):'';
-    slbl.textContent=`${slopePct.toFixed(1)}% slope${aspectName?' ↓'+aspectName:''}`;
+    slbl.textContent=`${slopePct.toFixed(1)}% slope${aspectDeg!==null?' ↓'+compassDir(aspectDeg):''}`;
     svg.appendChild(slbl);
     if(slopePct>5){
       const warn=document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -999,149 +1018,42 @@ function drawTreeGrid(svg,zone,pxPts,col){
       warn.setAttribute('text-anchor','middle');warn.setAttribute('fill','#f87171');
       warn.setAttribute('font-size','8');warn.setAttribute('font-family','-apple-system,sans-serif');
       warn.setAttribute('pointer-events','none');
-      warn.textContent='⚠ PC emitters recommended';
-      svg.appendChild(warn);
+      warn.textContent='⚠ PC emitters recommended';svg.appendChild(warn);
     }
   }
 
-  // ── Elevation query button (if no slope data yet) ────────────────────
+  // ── Elevation fetch button ────────────────────────────────────────────
   if(zone._slope==null&&!zone._elevQuerying){
-    const msg=zone._elevError||'Click to fetch slope data';
-    const col=zone._elevError?'#f87171':'#60a5fa';
-    const btn=document.createElementNS('http://www.w3.org/2000/svg','text');
-    btn.setAttribute('x',cx);btn.setAttribute('y',cy+14);
-    btn.setAttribute('text-anchor','middle');btn.setAttribute('fill',col);
-    btn.setAttribute('font-size','9');btn.setAttribute('font-family','-apple-system,sans-serif');
-    btn.setAttribute('cursor','pointer');btn.setAttribute('opacity','0.9');
-    btn.textContent=zone._elevError?`⚠ ${msg} — click to retry`:`⊕ ${msg}`;
-    btn.addEventListener('click',e=>{e.stopPropagation();fetchZoneElevation(zone);});
-    svg.appendChild(btn);
+    const eFill=zone._elevError?'#f87171':'#60a5fa';
+    const eBtn=document.createElementNS('http://www.w3.org/2000/svg','text');
+    eBtn.setAttribute('x',cx);eBtn.setAttribute('y',cy+(slopePct>0?34:14));
+    eBtn.setAttribute('text-anchor','middle');eBtn.setAttribute('fill',eFill);
+    eBtn.setAttribute('font-size','9');eBtn.setAttribute('font-family','-apple-system,sans-serif');
+    eBtn.setAttribute('cursor','pointer');eBtn.setAttribute('opacity','0.9');
+    eBtn.textContent=zone._elevError?`⚠ ${zone._elevError} — retry`:`⊕ Click to fetch slope`;
+    eBtn.addEventListener('click',e=>{e.stopPropagation();fetchZoneElevation(zone);});
+    svg.appendChild(eBtn);
   } else if(zone._elevQuerying){
-    const lbl=document.createElementNS('http://www.w3.org/2000/svg','text');
-    lbl.setAttribute('x',cx);lbl.setAttribute('y',cy+14);
-    lbl.setAttribute('text-anchor','middle');lbl.setAttribute('fill','#94a3b8');
-    lbl.setAttribute('font-size','9');lbl.setAttribute('font-family','-apple-system,sans-serif');
-    lbl.setAttribute('pointer-events','none');
-    lbl.textContent='Fetching elevation…';
-    svg.appendChild(lbl);
+    const eLbl=document.createElementNS('http://www.w3.org/2000/svg','text');
+    eLbl.setAttribute('x',cx);eLbl.setAttribute('y',cy+14);
+    eLbl.setAttribute('text-anchor','middle');eLbl.setAttribute('fill','#94a3b8');
+    eLbl.setAttribute('font-size','9');eLbl.setAttribute('font-family','-apple-system,sans-serif');
+    eLbl.setAttribute('pointer-events','none');eLbl.textContent='Fetching elevation…';
+    svg.appendChild(eLbl);
   }
 
   // ── Store computed values ─────────────────────────────────────────────
   const rowCount=Object.keys(rowPts).filter(k=>rowPts[k].length>0).length;
   zone._treeCount=dotCount;
   zone._rowCount=rowCount;
-  zone._emitterCount=dotCount*(zone.emitters||2);
+  zone._emitterCount=dotCount*(zone.emitters||1);
   zone._lateralM=totalLateralPx*mPerPx*slopeCorr;
-  // Total sub-main = all segments combined
   zone._subMainM=Math.max(0,smSpanM);
-  zone._smSegments=nSegments;
-  // Store all segment inlet points as lat/lng for connection routing
-  zone._smInletLLs=smInletPxArr.map(px=>p2ll(px.x,px.y));
-  // Primary inlet (first/highest segment) for backward compat
-  zone._smInletLL=zone._smInletLLs[0]||null;
-  zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
+  zone._smSegments=smSpanM>0?Math.max(1,Math.ceil(smSpanM/smMaxM)):1;
   zone._aspectScreenRad=aspectScreenRad;
   zone._slopePct=slopePct;
-  // Max allowable head loss per lateral = 2m (conservative, suits non-PC emitters).
-  // If slope > 0: max lateral length before >2m head variation = 200/slope%.
-  // If any lateral in the zone exceeds this, recommend a split.
-  // Split line runs contour-parallel (perpendicular to slope direction),
-  // positioned to divide the zone into equal-pressure bands.
-  if(slopePct>0.5&&laterals.length>=2){
-    const maxLateralM=200/slopePct; // metres
-    const maxLateralPx=maxLateralM/mPerPx;
-    const longestLateralPx=Math.max(...laterals.map(l=>
-      Math.hypot(l.e.x-l.s.x,l.e.y-l.s.y)));
-
-    if(longestLateralPx>maxLateralPx){
-      // How many bands are needed?
-      const nBands=Math.ceil(longestLateralPx/maxLateralPx);
-      // Draw nBands-1 split lines across the zone at equal row-spacing intervals
-      // Split lines run parallel to the row direction (along contour lines)
-      const sortedLats=laterals.sort((a,b)=>{
-        const pa=(a.s.x+a.e.x)/2*pux+(a.s.y+a.e.y)/2*puy;
-        const pb=(b.s.x+b.e.x)/2*pux+(b.s.y+b.e.y)/2*puy;
-        return pa-pb;
-      });
-      const totalRows=sortedLats.length;
-      for(let band=1;band<nBands;band++){
-        const splitIdx=Math.round(totalRows*band/nBands);
-        if(splitIdx<=0||splitIdx>=totalRows)continue;
-        const latA=sortedLats[splitIdx-1],latB=sortedLats[splitIdx];
-        // Midpoint between two adjacent rows at the split boundary
-        const midAx=(latA.s.x+latA.e.x)/2,midAy=(latA.s.y+latA.e.y)/2;
-        const midBx=(latB.s.x+latB.e.x)/2,midBy=(latB.s.y+latB.e.y)/2;
-        const splitCx=(midAx+midBx)/2,splitCy=(midAy+midBy)/2;
-        // Draw split line through the centroid in the row direction
-        // extended to cover the full zone width
-        const halfLen=diagLen*1.2;
-        const lx1=splitCx-rux*halfLen,ly1=splitCy-ruy*halfLen;
-        const lx2=splitCx+rux*halfLen,ly2=splitCy+ruy*halfLen;
-        // Clip to zone bounding box
-        const sl=document.createElementNS('http://www.w3.org/2000/svg','line');
-        sl.setAttribute('x1',lx1.toFixed(1));sl.setAttribute('y1',ly1.toFixed(1));
-        sl.setAttribute('x2',lx2.toFixed(1));sl.setAttribute('y2',ly2.toFixed(1));
-        sl.setAttribute('stroke','#facc15');sl.setAttribute('stroke-width','2');
-        sl.setAttribute('stroke-dasharray','8,4');sl.setAttribute('opacity','0.9');
-        sl.setAttribute('pointer-events','none');
-        svg.appendChild(sl);
-        // Label for the split band
-        const bandLbl=document.createElementNS('http://www.w3.org/2000/svg','text');
-        bandLbl.setAttribute('x',splitCx.toFixed(1));
-        bandLbl.setAttribute('y',(splitCy-6).toFixed(1));
-        bandLbl.setAttribute('text-anchor','middle');bandLbl.setAttribute('fill','#facc15');
-        bandLbl.setAttribute('font-size','8');bandLbl.setAttribute('font-family','-apple-system,sans-serif');
-        bandLbl.setAttribute('pointer-events','none');bandLbl.setAttribute('opacity','0.95');
-        bandLbl.textContent=`✂ Split ${band}/${nBands-1} — separate pressure zone`;
-        svg.appendChild(bandLbl);
-      }
-      // Overall warning label
-      zone._splitNeeded=nBands;
-      if(!zone._elevQuerying){
-        const warn2=document.createElementNS('http://www.w3.org/2000/svg','text');
-        warn2.setAttribute('x',cx.toFixed(1));warn2.setAttribute('y',(cy+34).toFixed(1));
-        warn2.setAttribute('text-anchor','middle');warn2.setAttribute('fill','#facc15');
-        warn2.setAttribute('font-size','8');warn2.setAttribute('font-family','-apple-system,sans-serif');
-        warn2.setAttribute('pointer-events','none');warn2.setAttribute('opacity','0.95');
-        warn2.textContent=`⚠ Split into ${nBands} pressure zones (max lateral ${maxLateralM.toFixed(0)}m at ${slopePct}% slope)`;
-        svg.appendChild(warn2);
-      }
-    } else {
-      zone._splitNeeded=null;
-    }
-  } else {
-    zone._splitNeeded=null;
-  }
-
-  // ── Sub-main inlet point (lat/lng) ───────────────────────────────────
-  // The inlet is ALWAYS the uphill end — water enters from above.
-  // Uphill = the smPts end whose lat/lng has higher elevation proxy.
-  // Without elevation data we use the aspect direction to determine which
-  // end of the smPts array is uphill.
-  if(smPts.length>=1){
-    const smFirst=smPts[0],smLast=smPts[smPts.length-1];
-    let inletPx,outletPx;
-    if(aspectScreenRad!==null&&slopePct>1){
-      // aspectScreenRad is downhill direction in screen space.
-      // Uphill = opposite direction.
-      const uphillRad=aspectScreenRad+Math.PI;
-      const uphillX=Math.cos(uphillRad),uphillY=Math.sin(uphillRad);
-      // Whichever smPts end projects further in uphill direction = the inlet
-      const projFirst=smFirst.x*uphillX+smFirst.y*uphillY;
-      const projLast =smLast.x *uphillX+smLast.y *uphillY;
-      inletPx =projFirst>projLast?smFirst:smLast;
-      outletPx=projFirst>projLast?smLast:smFirst;
-    } else {
-      // No slope data — default inlet at smPts[0] (arbitrary, user can tell from context)
-      inletPx=smFirst;outletPx=smLast;
-    }
-    zone._smInletLL=p2ll(inletPx.x,inletPx.y);
-    zone._smOutletLL=p2ll(outletPx.x,outletPx.y);
-    zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
-    zone._aspectScreenRad=aspectScreenRad;
-    zone._slopePct=slopePct;
-  }
 }
+
 
 // ── ZONE-TO-MAIN-PIPE CONNECTIONS ─────────────────────────────────────
 // For each crop zone:
@@ -2251,7 +2163,12 @@ window.materializeZonePipes=window.materializeZonePipes;
 let acctItems=[],acctNextId=1;
 
 function acctAutoQty(item){
-  const cz=zones.filter(z=>z.type!=='tank'&&z._treeCount!=null);
+  // Use zones that have been rendered (have lateral data) OR have tree count
+  // Fall back to all crop zones if none have been rendered yet
+  const allCrop=zones.filter(z=>z.type!=='tank');
+  const cz=allCrop.filter(z=>z._lateralM!=null&&z._lateralM>0).length>0
+    ? allCrop.filter(z=>z._lateralM!=null)
+    : allCrop; // fallback: include all crop zones even if not yet rendered
   switch(item.autoKey){
     case 'lat20mm': return cz.reduce((a,z)=>a+(z._lateralM||0),0);
     case 'sub1.5in': return cz.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
@@ -2276,7 +2193,12 @@ function toggleAcct(){
   const panel=document.getElementById('acct-panel');
   const isOpen=panel.classList.toggle('open');
   document.getElementById('acct-btn').classList.toggle('on',isOpen);
-  if(isOpen){redraw();setTimeout(renderAcct,60);}
+  if(isOpen){
+    // Force full redraw first so zone transient values (_lateralM etc.) are populated
+    redraw();
+    // Give redraw time to complete before rendering accounting
+    setTimeout(renderAcct,150);
+  }
 }
 window.toggleAcct=toggleAcct;
 
@@ -2368,6 +2290,16 @@ function migrateAcctItems(){
     {label:'Lateral feeder tees',unit:'pcs',autoKey:'feeders'},
     {label:'Drip emitters',unit:'pcs',autoKey:'emitters'},
   ];
+  // Also ensure main pipe items exist for any sizes in the network
+  ['5','4','3','2'].forEach(dia=>{
+    const key=`mainpipe-${dia}`;
+    const hasStock=pipes.filter(p=>p.dia===dia&&p.status==='existing').length>0;
+    const hasPlanned=pipes.filter(p=>p.dia===dia&&p.status==='planned').length>0;
+    if((hasStock||hasPlanned)&&!acctItems.find(i=>i.autoKey===key)){
+      acctItems.unshift({id:acctNextId++,label:`${dia}″ main pipe (buy)`,unit:'m',autoKey:key,unitPrice:0});
+      changed=true;
+    }
+  });
   const firstManualIdx=acctItems.findIndex(i=>!i.autoKey);
   const insertAt=firstManualIdx>=0?firstManualIdx:acctItems.length;
   required.forEach(req=>{
