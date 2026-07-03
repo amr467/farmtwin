@@ -780,6 +780,19 @@ function drawTreeGrid(svg,zone,pxPts,col){
   // labels, slope info, fetch button, and compute stored values.
   const skipGrid=rowStepPx<4||perpStepPx<4||rowStepPx>500||perpStepPx>500;
 
+  // These are needed both inside and outside the skipGrid block
+  const slopePct=zone._slope||0;
+  const aspectDeg=zone._aspect??null;
+  const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
+  let aspectScreenRad=null;
+  let uphillX=0,uphillY=-1;
+  if(aspectDeg!==null&&slopePct>1){
+    const uphillDeg=(aspectDeg+180)%360;
+    aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
+    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
+  }
+  const isFlat=slopePct<2;
+
   const cx=pxPts.reduce((a,p)=>a+p.x,0)/pxPts.length;
   const cy=pxPts.reduce((a,p)=>a+p.y,0)/pxPts.length;
   const diagLen=Math.hypot(
