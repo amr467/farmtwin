@@ -350,6 +350,8 @@ function resizeSvgs(){
 window.addEventListener('resize',()=>{map.invalidateSize();resizeSvgs();redraw();});
 map.on('resize',resizeSvgs);
 map.on('moveend zoomend',()=>{redraw();updateGhost();});
+// Reposition nodes during pan so they don't lag behind the map
+map.on('move',()=>{drawNodes();});
 setTimeout(resizeSvgs,50);
 
 // ── TOOL STATE ────────────────────────────────────────────────────────
@@ -667,6 +669,7 @@ function drawZones(){
     poly.setAttribute('stroke',col);poly.setAttribute('stroke-width',isSel?2:1.5);
     if(!isSel)poly.setAttribute('stroke-dasharray','6,4');
     poly.style.cursor='pointer';poly.style.pointerEvents='all';
+    poly.setAttribute('stroke-opacity','1');
     poly.addEventListener('click',e=>{e.stopPropagation();if(tool==='select')selectZone(zone);});
     zSvg.appendChild(poly);
 
@@ -731,7 +734,9 @@ function drawTreeGrid(svg,zone,pxPts,col){
   )/2;
   const rowStepPx=zone.treeSpacingM/mPerPx;
   const perpStepPx=zone.rowSpacingM/mPerPx;
-  if(rowStepPx<4||perpStepPx<4||rowStepPx>500||perpStepPx>500)return;
+  // At very high zoom steps become huge — skip the grid dots but still draw
+  // labels, slope info, fetch button, and compute stored values.
+  const skipGrid=rowStepPx<4||perpStepPx<4||rowStepPx>500||perpStepPx>500;
 
   const cx=pxPts.reduce((a,p)=>a+p.x,0)/pxPts.length;
   const cy=pxPts.reduce((a,p)=>a+p.y,0)/pxPts.length;
@@ -762,70 +767,66 @@ function drawTreeGrid(svg,zone,pxPts,col){
     }
   }
 
-  // ── Slope-aware pipe layout ──────────────────────────────────────────
-  // Slope data is stored on zone._slope (%), zone._aspect (deg from N, downhill direction).
-  // If no slope data yet, fall back to simple flat layout.
   const slopePct=zone._slope||0;
-  const aspectDeg=zone._aspect??null; // null = unknown/flat
-
-  // Slope correction factor for pipe lengths: actual pipe > horizontal distance
+  const aspectDeg=zone._aspect??null;
   const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
 
-  // Determine which end of each lateral is "uphill" (where sub-main connects).
-  // Uphill end = whichever lateral endpoint projects further in the uphill direction.
-  // Uphill direction in screen space = aspect (downhill) + 180°.
   let aspectScreenRad=null;
-  let uphillX=0,uphillY=-1; // default: uphill = north (screen up)
+  let uphillX=0,uphillY=-1;
   if(aspectDeg!==null&&slopePct>1){
     const uphillDeg=(aspectDeg+180)%360;
     aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
     uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
   }
-
-  // ── Flat vs sloped layout decision ──────────────────────────────────
-  // Flat (slope < 2%): sub-main runs down the CENTER of the zone.
-  //   Each lateral splits into two halves — left and right of sub-main.
-  //   This halves total lateral pipe vs side-entry.
-  // Sloped (slope ≥ 2%): sub-main at the UPHILL end of each lateral.
   const isFlat=slopePct<2;
 
-  // Build lateral endpoints for each row
-  const laterals=[];
-  let totalLateralPx=0;
-  let minRowProj=Infinity,maxRowProj=-Infinity;
+  // Only compute and draw the grid when zoom level makes it renderable
+  let dotCount=zone._treeCount||0;
+  let laterals=[],totalLateralPx=0,minRowProj=Infinity,maxRowProj=-Infinity;
+  const rowPts={};
 
-  Object.entries(rowPts).forEach(([riStr,pts])=>{
-    if(!pts.length)return;
-    pts.sort((a,b)=>(a.x*rux+a.y*ruy)-(b.x*rux+b.y*ruy));
-    const start=pts[0],end=pts[pts.length-1];
-    const spanPx=pts.length>=2?Math.hypot(end.x-start.x,end.y-start.y):0;
-    const lateralPx=spanPx+rowStepPx;
-    totalLateralPx+=lateralPx;
-    const extStart={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
-    const extEnd  ={x:end.x  +rux*rowStepPx*0.5,y:end.y  +ruy*rowStepPx*0.5};
-    const s=ptInPolyPx(extStart,pxPts)?extStart:start;
-    const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
+  if(!skipGrid){
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('pointer-events','none');
+    const maxSteps=Math.ceil(diagLen/Math.min(rowStepPx,perpStepPx))+2;
+    dotCount=0;
 
-    let smEnd,smMid=null;
-    if(isFlat){
-      // Flat: sub-main connects at midpoint of each lateral
-      smMid={x:(s.x+e.x)/2,y:(s.y+e.y)/2};
-      smEnd=smMid;
-    } else {
-      // Sloped: sub-main at the uphill end
-      const sProjUp=s.x*uphillX+s.y*uphillY;
-      const eProjUp=e.x*uphillX+e.y*uphillY;
-      smEnd=sProjUp>eProjUp?s:e;
+    for(let ri=-maxSteps;ri<=maxSteps;ri++){
+      for(let ti=-maxSteps;ti<=maxSteps;ti++){
+        const sx=cx+ti*rowStepPx*rux+ri*perpStepPx*pux;
+        const sy=cy+ti*rowStepPx*ruy+ri*perpStepPx*puy;
+        if(!ptInPolyPx({x:sx,y:sy},pxPts))continue;
+        dotCount++;
+        const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        c.setAttribute('cx',sx.toFixed(1));c.setAttribute('cy',sy.toFixed(1));
+        c.setAttribute('r','2');c.setAttribute('fill',col);c.setAttribute('opacity','0.6');
+        g.appendChild(c);
+        if(!rowPts[ri])rowPts[ri]=[];
+        rowPts[ri].push({x:sx,y:sy});
+      }
     }
-    const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
-    const proj=midX*pux+midY*puy;
-    if(proj<minRowProj)minRowProj=proj;
-    if(proj>maxRowProj)maxRowProj=proj;
-    laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
-  });
 
-  // Draw tree dots
-  svg.appendChild(g);
+    Object.entries(rowPts).forEach(([riStr,pts])=>{
+      if(!pts.length)return;
+      pts.sort((a,b)=>(a.x*rux+a.y*ruy)-(b.x*rux+b.y*ruy));
+      const start=pts[0],end=pts[pts.length-1];
+      const spanPx=pts.length>=2?Math.hypot(end.x-start.x,end.y-start.y):0;
+      totalLateralPx+=spanPx+rowStepPx;
+      const extStart={x:start.x-rux*rowStepPx*0.5,y:start.y-ruy*rowStepPx*0.5};
+      const extEnd  ={x:end.x  +rux*rowStepPx*0.5,y:end.y  +ruy*rowStepPx*0.5};
+      const s=ptInPolyPx(extStart,pxPts)?extStart:start;
+      const e=ptInPolyPx(extEnd,pxPts)?extEnd:end;
+      let smEnd,smMid=null;
+      if(isFlat){smMid={x:(s.x+e.x)/2,y:(s.y+e.y)/2};smEnd=smMid;}
+      else{const sPU=s.x*uphillX+s.y*uphillY,ePU=e.x*uphillX+e.y*uphillY;smEnd=sPU>ePU?s:e;}
+      const midX=(s.x+e.x)/2,midY=(s.y+e.y)/2;
+      const proj=midX*pux+midY*puy;
+      if(proj<minRowProj)minRowProj=proj;
+      if(proj>maxRowProj)maxRowProj=proj;
+      laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
+    });
+
+    svg.appendChild(g);
 
   // 20mm lateral color — distinct amber so they stand out from zone fill and tree dots
   const latCol='#fde68a';
@@ -938,10 +939,12 @@ function drawTreeGrid(svg,zone,pxPts,col){
   });
 
   // Store sub-main inlet points (one per segment) for connection routing
-  const smInletPxArr=smSegments.map(seg=>seg[seg.length-1]);
-  const inletPx_=smPtsAll.length>0?smPtsAll[smPtsAll.length-1]:null;
+  const smInletPxArr=skipGrid?[]:smSegments.map(seg=>seg[seg.length-1]);
+  const inletPx_=(!skipGrid&&smPtsAll.length>0)?smPtsAll[smPtsAll.length-1]:null;
 
-  // ── Slope info label (if elevation data available) ───────────────────
+  } // end if(!skipGrid) — visual drawing complete
+
+  // ── Slope info label (always shown regardless of zoom) ───────────────
   if(slopePct>0){
     const slbl=document.createElementNS('http://www.w3.org/2000/svg','text');
     slbl.setAttribute('x',cx);slbl.setAttribute('y',cy+14);
@@ -1612,7 +1615,7 @@ function finishZone(){
   const isTank=pendingZoneType==='tank';
   const zone={id:'z'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
     label:(isTank?'Tank ':'Zone ')+zc++,polygon:[...drawPts],
-    rowSpacingM:7,treeSpacingM:7,emitters:2,lhrPerEmitter:4,rowAngleDeg:15,pricePerTree:0,subMainDia:'1.5',
+    rowSpacingM:7,treeSpacingM:7,emitters:1,lhrPerEmitter:10,rowAngleDeg:15,pricePerTree:0,subMainDia:'1.5',
     color:isTank?'#fb923c':ZONE_COLS[zones.filter(z=>z.type!=='tank').length%ZONE_COLS.length],
     type:isTank?'tank':'zone',
     ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{})};
