@@ -134,6 +134,23 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
 ::-webkit-scrollbar{width:4px;height:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px}
 button,input,select{font-family:inherit}
+
+/* ── AI Assistant ─────────────────────────────── */
+#ai-panel{position:fixed;inset:0;z-index:950;background:#0009;display:none;align-items:flex-end;justify-content:flex-end;padding:60px 12px 70px 12px}
+#ai-panel.open{display:flex}
+#ai-inner{background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r);width:min(420px,96vw);max-height:70vh;display:flex;flex-direction:column;box-shadow:0 12px 40px #000c}
+.ai-head{display:flex;align-items:center;justify-content:space-between;padding:10px 13px;border-bottom:1px solid var(--bdr);flex-shrink:0}
+.ai-msgs{flex:1;overflow-y:auto;padding:10px 13px;display:flex;flex-direction:column;gap:8px}
+.ai-msg{padding:8px 11px;border-radius:var(--r);font-size:12px;line-height:1.55;max-width:95%}
+.ai-msg.user{background:var(--sur2);border:1px solid var(--bdr);align-self:flex-end;color:var(--tx2)}
+.ai-msg.assistant{background:#0d2c1a;border:1px solid #1a4731;align-self:flex-start;color:var(--tx);white-space:pre-wrap}
+.ai-msg.thinking{color:var(--tx3);font-style:italic;align-self:flex-start}
+.ai-input-row{display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--bdr);flex-shrink:0}
+.ai-input{flex:1;height:32px;background:var(--sur2);border:1px solid var(--bdr2);border-radius:var(--rs);color:var(--tx);padding:0 10px;font-size:12px;font-family:inherit}
+.ai-input:focus{outline:none;border-color:var(--ok)}
+.ai-key-row{padding:8px 12px;border-top:1px solid var(--bdr);flex-shrink:0;display:flex;gap:6px;align-items:center;font-size:10px;color:var(--tx3)}
+.ai-key-row input{flex:1;height:24px;background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);color:var(--tx2);padding:0 7px;font-size:11px;font-family:inherit}
+.ai-key-row input:focus{outline:none;border-color:var(--ok)}
 /* ── Accounting panel ─────────────────────────────── */
 #acct-panel{position:fixed;inset:0;z-index:900;background:#0009;display:none;align-items:flex-start;justify-content:center;padding-top:56px}
 #acct-panel.open{display:flex}
@@ -181,6 +198,7 @@ button,input,select{font-family:inherit}
   <div class="sep"></div>
   <button class="btn" onclick="toggleSidebar()">≡ Lists</button>
   <button class="btn" onclick="toggleAcct()" id="acct-btn">💰 Accounting</button>
+  <button class="btn" onclick="toggleAI()" id="ai-btn">🤖 Ask Claude</button>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
     <span id="save-txt" style="font-size:10px;color:var(--tx3)"></span>
     <div id="sync" class="offline"><span style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block"></span><span id="sync-txt">offline</span></div>
@@ -264,6 +282,30 @@ button,input,select{font-family:inherit}
       </div>
     </div>
     <div class="acct-body" id="acct-body"></div>
+  </div>
+</div>
+
+<!-- AI Assistant panel -->
+<div id="ai-panel">
+  <div id="ai-inner">
+    <div class="ai-head">
+      <span style="font-weight:700;font-size:13px">🤖 FarmTwin Assistant</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn" onclick="clearAIChat()">Clear</button>
+        <button class="btn" onclick="toggleAI()">✕</button>
+      </div>
+    </div>
+    <div class="ai-msgs" id="ai-msgs">
+      <div class="ai-msg assistant">Hi! I'm your FarmTwin irrigation assistant. I know your farm in Mafraq — ask me anything about irrigation design, pipe sizing, zone layout, or procurement. You can also select a zone or pipe first and I'll focus on that.</div>
+    </div>
+    <div class="ai-input-row">
+      <input class="ai-input" id="ai-input" placeholder="Ask about irrigation design, pipe sizing, zones…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI();}">
+      <button class="btn on" onclick="sendAI()" style="flex-shrink:0">Send</button>
+    </div>
+    <div class="ai-key-row">
+      API key: <input type="password" id="ai-key" placeholder="sk-ant-…" oninput="localStorage.setItem('ft_ai_key',this.value)">
+      <span id="ai-key-status" style="flex-shrink:0"></span>
+    </div>
   </div>
 </div>
 
@@ -745,43 +787,8 @@ function drawTreeGrid(svg,zone,pxPts,col){
     Math.max(...pxPts.map(p=>p.y))-Math.min(...pxPts.map(p=>p.y))
   )*0.8;
 
-  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.setAttribute('pointer-events','none');
-
-  const maxSteps=Math.ceil(diagLen/Math.min(rowStepPx,perpStepPx))+2;
-  let dotCount=0;
-  const rowPts={};
-
-  for(let ri=-maxSteps;ri<=maxSteps;ri++){
-    for(let ti=-maxSteps;ti<=maxSteps;ti++){
-      const sx=cx+ti*rowStepPx*rux+ri*perpStepPx*pux;
-      const sy=cy+ti*rowStepPx*ruy+ri*perpStepPx*puy;
-      if(!ptInPolyPx({x:sx,y:sy},pxPts))continue;
-      dotCount++;
-      const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
-      c.setAttribute('cx',sx.toFixed(1));c.setAttribute('cy',sy.toFixed(1));
-      c.setAttribute('r','2');c.setAttribute('fill',col);c.setAttribute('opacity','0.6');
-      g.appendChild(c);
-      if(!rowPts[ri])rowPts[ri]=[];
-      rowPts[ri].push({x:sx,y:sy});
-    }
-  }
-
-  const slopePct=zone._slope||0;
-  const aspectDeg=zone._aspect??null;
-  const slopeCorr=slopePct>0?1/Math.cos(Math.atan(slopePct/100)):1;
-
-  let aspectScreenRad=null;
-  let uphillX=0,uphillY=-1;
-  if(aspectDeg!==null&&slopePct>1){
-    const uphillDeg=(aspectDeg+180)%360;
-    aspectScreenRad=(-90+uphillDeg)*Math.PI/180;
-    uphillX=Math.cos(aspectScreenRad);uphillY=Math.sin(aspectScreenRad);
-  }
-  const isFlat=slopePct<2;
-
   // Only compute and draw the grid when zoom level makes it renderable
-  let dotCount=zone._treeCount||0;
+  let dotCount=zone._treeCount||0; // fallback to cached value when skipGrid
   let laterals=[],totalLateralPx=0,minRowProj=Infinity,maxRowProj=-Infinity;
   const rowPts={};
 
@@ -1867,7 +1874,10 @@ function showZoneCard(zone){
       <button class="pcb" onclick="closeCard()">✕</button>
     </div>
     ${!isTank?`<div class="pc-sect">
-      <button class="pcb act" style="width:100%;height:26px" onclick="materializeZonePipes('${zone.id}')">⊕ Create sub-main &amp; feeders as real pipes</button>
+      <div style="display:flex;gap:5px">
+        <button class="pcb act" style="flex:1;height:26px" onclick="materializeZonePipes('${zone.id}')">⊕ Create sub-main as pipes</button>
+        <button class="pcb" style="height:26px;white-space:nowrap" onclick="askAboutZone('${zone.id}')">🤖 Ask Claude</button>
+      </div>
     </div>`:''}`;
   // live update tree calc and wall type toggle
   ['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt'].forEach(id=>{
@@ -2453,6 +2463,162 @@ window.exportSummaryCSV=function(){
   csv+=csvRow('Olive Investment','','','','',oliveTotal.toFixed(2));
   csv+=csvRow('GRAND TOTAL (JD)','','','','',(matTotal+oliveTotal).toFixed(2));
   dlCSV(csv,`${proj}_summary_${date}.csv`);
+};
+
+// ── AI ASSISTANT ──────────────────────────────────────────────────────
+const AI_SYSTEM = `You are an irrigation design assistant for Amr Saudi's olive farm in Mafraq, Jordan.
+You are embedded in FarmTwin — a digital twin app for planning the farm's drip irrigation network.
+
+FARM CONTEXT:
+- Location: Mafraq region, northern Jordan (~32.5°N, 36.2°E)
+- Crop: Olive trees (Rumi and Nabali varieties), 7m × 7m spacing
+- Row orientation: 15° CCW from North (NNW direction)
+- Emitters: 1 per tree at 10 L/hr → 10 L/hr per tree
+- Currency: Jordanian Dinar (JD)
+- Terrain: Variable slope, northern Jordan highland, sandy loam soil
+
+IRRIGATION DESIGN RULES:
+- Sub-main max run: 1.5″ = 150m, 2″ = 250m before pressure loss is problematic
+- Laterals (20mm) run across the slope (along contour lines)
+- Max lateral length: 200/slope% metres before >2m head loss
+- Sub-main position: uphill end of laterals on slopes ≥2%, center on flat (<2%)
+- Slope >5%: recommend pressure-compensating (PC) emitters
+- Elevation API: api.open-meteo.com/v1/elevation (CORS-enabled)
+- Feeder pipe from sub-main inlet to main pipe should route uphill then across slope
+
+PIPE SIZES IN USE:
+- Main distribution: 5″, 4″, 3″
+- Sub-main: 1.5″ (standard), 2″ (long runs/high flow)
+- Laterals: 20mm drip
+
+PROCUREMENT:
+- Stock = existing pipes in ground
+- Needed = planned pipes
+- Buy = max(0, needed - stock)
+- Damaged pipes are map markers only — not counted in procurement
+
+Be direct, practical, and specific. Use metric units. Reference dunums for area (1 dunum = 1000 m²).
+Answer in under 200 words unless a detailed explanation is genuinely needed.
+If you need the current project data to answer, it will be provided below.`;
+
+let aiHistory=[];
+let aiOpen=false;
+
+function toggleAI(){
+  aiOpen=!aiOpen;
+  document.getElementById('ai-panel').classList.toggle('open',aiOpen);
+  document.getElementById('ai-btn').classList.toggle('on',aiOpen);
+  if(aiOpen){
+    // Load saved API key
+    const saved=localStorage.getItem('ft_ai_key')||'';
+    const keyEl=document.getElementById('ai-key');
+    if(keyEl&&saved)keyEl.value=saved;
+    updateAIKeyStatus();
+    document.getElementById('ai-input')?.focus();
+  }
+}
+window.toggleAI=toggleAI;
+
+function updateAIKeyStatus(){
+  const key=localStorage.getItem('ft_ai_key')||'';
+  const el=document.getElementById('ai-key-status');
+  if(!el)return;
+  el.textContent=key.startsWith('sk-ant-')?'✓':'';
+  el.style.color='var(--ok)';
+}
+
+function buildProjectContext(){
+  const cz=zones.filter(z=>z.type!=='tank');
+  const tanks=zones.filter(z=>z.type==='tank');
+  const totalTrees=cz.reduce((a,z)=>a+(z._treeCount||0),0);
+  const totalLat=(cz.reduce((a,z)=>a+(z._lateralM||0),0)/1000).toFixed(2);
+  const totalSub=cz.reduce((a,z)=>a+(z._subMainM||0),0).toFixed(0);
+  const existM=pipes.filter(p=>p.status==='existing').reduce((a,p)=>a+pipeLenM(p),0).toFixed(0);
+  const planM=pipes.filter(p=>p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0).toFixed(0);
+  const selCtx=selZone?`\nSELECTED ZONE: ${selZone.label}, ${(polyArea(selZone.polygon)/1000).toFixed(1)} dun, ${selZone._treeCount||'?'} trees, slope ${selZone._slope!=null?selZone._slope+'%':'unknown'}, aspect ${selZone._aspect!=null?compassDir(selZone._aspect):'unknown'}, sub-main ${selZone.subMainDia||'1.5'}″ ~${(selZone._subMainM||0).toFixed(0)}m, laterals ~${(selZone._lateralM||0).toFixed(0)}m`
+    :selPipe?`\nSELECTED PIPE: ${selPipe.label}, ${selPipe.dia}″ ${selPipe.status}, ${pipeLenM(selPipe).toFixed(0)}m`
+    :selNode?`\nSELECTED NODE: ${selNode.label} (${selNode.type})${selNode.elev!=null?', elev '+selNode.elev+'m':''}`:'';
+  return `\nCURRENT PROJECT (${projId}):
+- ${cz.length} crop zones, ${totalTrees} trees total, ${tanks.length} storage tanks
+- Total laterals: ${totalLat}km of 20mm
+- Total sub-main: ${totalSub}m
+- Existing pipe network: ${existM}m | Planned additions: ${planM}m
+- Pipes total: ${pipes.length} (${pipes.filter(p=>p.status==='existing').length} existing, ${pipes.filter(p=>p.status==='planned').length} planned, ${pipes.filter(p=>p.status==='damaged').length} damaged)${selCtx}`;
+}
+
+async function sendAI(){
+  const input=document.getElementById('ai-input');
+  const msg=input?.value.trim();
+  if(!msg)return;
+  const key=localStorage.getItem('ft_ai_key')||'';
+  if(!key.startsWith('sk-ant-')){
+    addAIMsg('assistant','Please enter your Anthropic API key in the field below (starts with sk-ant-).');
+    return;
+  }
+  input.value='';
+  addAIMsg('user',msg);
+  const thinking=addAIMsg('thinking','Thinking…');
+  aiHistory.push({role:'user',content:msg});
+
+  try{
+    const systemWithCtx=AI_SYSTEM+buildProjectContext();
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:600,
+        system:systemWithCtx,
+        messages:aiHistory
+      })
+    });
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error?.message||`API error ${res.status}`);
+    const reply=data.content?.[0]?.text||'No response';
+    thinking.remove();
+    addAIMsg('assistant',reply);
+    aiHistory.push({role:'assistant',content:reply});
+    // Keep history to last 10 exchanges to avoid token overflow
+    if(aiHistory.length>20)aiHistory=aiHistory.slice(-20);
+  }catch(err){
+    thinking.remove();
+    addAIMsg('assistant',`Error: ${err.message}`);
+    aiHistory.pop(); // remove the user message that failed
+  }
+}
+window.sendAI=sendAI;
+
+function addAIMsg(type,text){
+  const msgs=document.getElementById('ai-msgs');
+  if(!msgs)return null;
+  const div=document.createElement('div');
+  div.className='ai-msg '+type;
+  div.textContent=text;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+  return div;
+}
+
+function clearAIChat(){
+  aiHistory=[];
+  const msgs=document.getElementById('ai-msgs');
+  if(msgs){
+    msgs.innerHTML='';
+    addAIMsg('assistant','Chat cleared. Ask me anything about your farm or irrigation design.');
+  }
+}
+window.clearAIChat=clearAIChat;
+
+// Context-aware quick-ask from zone card
+window.askAboutZone=function(zoneId){
+  const z=zones.find(x=>x.id===zoneId);
+  if(!z)return;
+  selectZone(z);
+  if(!aiOpen)toggleAI();
+  const area=(polyArea(z.polygon)/1000).toFixed(1);
+  const q=`Review zone "${z.label}" (${area} dun, ${z._treeCount||'?'} trees, ${z._slope!=null?z._slope+'% slope '+compassDir(z._aspect||0):'slope unknown'}). Sub-main: ${z.subMainDia||'1.5'}″ ~${(z._subMainM||0).toFixed(0)}m. Laterals: ~${(z._lateralM||0).toFixed(0)}m. Any issues or recommendations?`;
+  document.getElementById('ai-input').value=q;
+  sendAI();
 };
 
 // ── KEYBOARD ──────────────────────────────────────────────────────────
