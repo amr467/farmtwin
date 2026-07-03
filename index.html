@@ -2212,16 +2212,23 @@ function renderAcct(){
   else{migrateAcctItems();}
 
   let h='';
-  // Materials
+  // ── Materials & Components ──────────────────────────────────────────
   h+=`<div class="acct-sec"><div class="acct-sec-h">Materials &amp; Components</div>
   <table class="acct-table">
   <tr><th style="width:36%">Item</th><th>Unit</th><th class="acct-num">Qty</th><th class="acct-num">Unit price (JD)</th><th class="acct-num">Total (JD)</th><th></th></tr>`;
-  acctItems.forEach((item,i)=>{
+  let matTotal=0;
+  // Group by category for subtotals
+  const mainPipeItems=acctItems.filter(i=>i.autoKey?.startsWith('mainpipe-'));
+  const irrigItems=acctItems.filter(i=>['sub1.5in','sub2in','lat20mm','feeders','emitters'].includes(i.autoKey));
+  const manualItems=acctItems.filter(i=>!i.autoKey);
+
+  const renderRow=(item,i)=>{
     const qty=acctAutoQty(item);
     const total=qty*(item.unitPrice||0);
+    matTotal+=total;
     const qtyDisp=item.autoKey?(qty>999?fmtM(qty):qty.toFixed(1)):(qty||0);
     const autoTag=item.autoKey?`<span style="font-size:8px;color:var(--info);margin-left:3px">AUTO</span>`:'';
-    h+=`<tr>
+    return `<tr>
       <td>${item.label}${autoTag}</td>
       <td style="color:var(--tx3)">${item.unit||''}</td>
       <td class="acct-num">${item.autoKey
@@ -2231,7 +2238,59 @@ function renderAcct(){
       <td class="acct-num" style="color:${total>0?'var(--ok)':'var(--tx3)'};font-weight:600">${total>0?fmtJD(total):'—'}</td>
       <td><button onclick="removeAcctItem(${i})" style="background:none;border:none;color:var(--tx3);cursor:pointer;font-size:14px;padding:0 4px">×</button></td>
     </tr>`;
-  });
+  };
+  const subRow=(label,val,span=5)=>
+    `<tr style="background:var(--sur3)"><td colspan="${span}" style="padding:4px 6px;font-size:10px;color:var(--tx3)">${label}</td>
+     <td class="acct-num" style="padding:4px 6px;font-weight:700;color:var(--ok)">${fmtJD(val)}</td></tr>`;
+
+  if(mainPipeItems.length){
+    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Main distribution pipes</td></tr>`;
+    let sub=0;
+    mainPipeItems.forEach(item=>{
+      const idx=acctItems.indexOf(item);
+      h+=renderRow(item,idx);
+      sub+=acctAutoQty(item)*(item.unitPrice||0);
+    });
+    if(sub>0)h+=subRow('Subtotal — main pipes',sub);
+  }
+
+  if(irrigItems.length){
+    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Irrigation pipes &amp; fittings</td></tr>`;
+    let sub=0;
+    // Pipe lengths summary
+    const latM=acctAutoQty({autoKey:'lat20mm'});
+    const sm15M=acctAutoQty({autoKey:'sub1.5in'});
+    const feedN=acctAutoQty({autoKey:'feeders'});
+    const emitN=acctAutoQty({autoKey:'emitters'});
+    irrigItems.forEach(item=>{
+      const idx=acctItems.indexOf(item);
+      h+=renderRow(item,idx);
+      sub+=acctAutoQty(item)*(item.unitPrice||0);
+    });
+    // Irrigation summary line
+    const irrigSummary=[];
+    if(latM>0)irrigSummary.push(`${fmtM(latM)} lateral`);
+    if(sm15M>0)irrigSummary.push(`${fmtM(sm15M)} sub-main`);
+    if(feedN>0)irrigSummary.push(`${feedN.toFixed(0)} tees`);
+    if(emitN>0)irrigSummary.push(`${emitN.toLocaleString()} emitters`);
+    if(irrigSummary.length)h+=`<tr style="background:var(--sur2)"><td colspan="6" style="padding:2px 6px;font-size:9px;color:var(--tx3)">${irrigSummary.join(' · ')}</td></tr>`;
+    if(sub>0)h+=subRow('Subtotal — irrigation',sub);
+  }
+
+  if(manualItems.length){
+    h+=`<tr><td colspan="6" style="padding:3px 6px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);background:var(--sur2)">Other costs</td></tr>`;
+    let sub=0;
+    manualItems.forEach(item=>{
+      const idx=acctItems.indexOf(item);
+      h+=renderRow(item,idx);
+      sub+=acctAutoQty(item)*(item.unitPrice||0);
+    });
+    if(sub>0)h+=subRow('Subtotal — other',sub);
+  }
+
+  // Recalculate matTotal properly (renderRow accumulated it)
+  matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+
   h+=`</table>
   <div class="acct-add" style="margin-top:8px">
     <input id="an-lbl" placeholder="Item name" style="flex:2">
@@ -2239,14 +2298,19 @@ function renderAcct(){
     <input id="an-qty" type="number" placeholder="Qty" style="width:55px" min="0">
     <input id="an-price" type="number" placeholder="JD/unit" style="width:70px" min="0" step="0.01">
     <button class="btn on" onclick="addManualAcctItem()">+ Add</button>
+  </div>
+  <div style="display:flex;justify-content:space-between;padding:7px 6px;border-top:2px solid var(--bdr2);margin-top:6px;font-size:12px">
+    <span style="color:var(--tx2);font-weight:600">Materials total</span>
+    <span style="color:var(--ok);font-weight:700">${fmtJD(matTotal)}</span>
   </div></div>`;
 
-  // Olive investment
+  // ── Olive Investment ────────────────────────────────────────────────
   const cropZones=zones.filter(z=>z.type!=='tank');
+  const totalTrees=cropZones.reduce((a,z)=>a+(z._treeCount||0),0);
+  let oliveTotal=0;
   h+=`<div class="acct-sec"><div class="acct-sec-h">Olive Investment — per zone</div>
   <table class="acct-table">
-  <tr><th>Zone</th><th class="acct-num">Trees</th><th class="acct-num">Price/tree (JD)</th><th class="acct-num">Total (JD)</th></tr>`;
-  let oliveTotal=0;
+  <tr><th>Zone</th><th class="acct-num">Trees</th><th class="acct-num">Price/tree (JD)</th><th class="acct-num">Zone total (JD)</th></tr>`;
   cropZones.forEach(z=>{
     const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
     oliveTotal+=cost;
@@ -2258,17 +2322,38 @@ function renderAcct(){
     </tr>`;
   });
   if(!cropZones.length)h+=`<tr><td colspan="4" style="color:var(--tx3);padding:8px 6px;font-size:11px">No crop zones drawn yet</td></tr>`;
+  // Olive subtotal row
+  h+=`<tr style="border-top:2px solid var(--bdr2);background:var(--sur2)">
+    <td style="padding:5px 6px;font-weight:700">Total</td>
+    <td class="acct-num" style="font-weight:700;color:var(--info)">${totalTrees.toLocaleString()} trees</td>
+    <td class="acct-num" style="color:var(--tx3);font-size:10px">${totalTrees>0&&oliveTotal>0?'avg '+(oliveTotal/totalTrees).toFixed(2)+' JD':''}</td>
+    <td class="acct-num" style="font-weight:700;color:var(--ok)">${oliveTotal>0?fmtJD(oliveTotal):'—'}</td>
+  </tr>`;
   h+=`</table></div>`;
 
-  // Grand total
-  const matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+  // ── Grand total breakdown ───────────────────────────────────────────
   const grand=matTotal+oliveTotal;
+  const pctMat=grand>0?(matTotal/grand*100).toFixed(0):0;
+  const pctOlive=grand>0?(oliveTotal/grand*100).toFixed(0):0;
   h+=`<div class="acct-total">
-    <div>
+    <div style="flex:1">
       <div class="acct-total-lbl">Project total</div>
-      <div style="font-size:10px;color:var(--tx3);margin-top:2px">Materials ${fmtJD(matTotal)} + Olives ${fmtJD(oliveTotal)}</div>
+      <div style="margin-top:5px;display:flex;flex-direction:column;gap:3px">
+        <div style="display:flex;justify-content:space-between;font-size:10px">
+          <span style="color:var(--tx3)">Materials &amp; components</span>
+          <span style="color:var(--tx2)">${fmtJD(matTotal)} <span style="color:var(--tx3)">(${pctMat}%)</span></span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10px">
+          <span style="color:var(--tx3)">Olive trees (${totalTrees.toLocaleString()} trees)</span>
+          <span style="color:var(--tx2)">${fmtJD(oliveTotal)} <span style="color:var(--tx3)">(${pctOlive}%)</span></span>
+        </div>
+        <div style="height:1px;background:var(--bdr);margin:2px 0"></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700">
+          <span style="color:var(--tx)">Grand total</span>
+          <span style="color:var(--ok)">${fmtJD(grand)}</span>
+        </div>
+      </div>
     </div>
-    <div class="acct-total-val">${fmtJD(grand)}</div>
   </div>`;
 
   body.innerHTML=h;
