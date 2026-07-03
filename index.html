@@ -822,7 +822,7 @@ function drawTreeGrid(svg,zone,pxPts,col){
         dotCount++;
         const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
         c.setAttribute('cx',sx.toFixed(1));c.setAttribute('cy',sy.toFixed(1));
-        c.setAttribute('r','2');c.setAttribute('fill',col);c.setAttribute('opacity','0.6');
+        c.setAttribute('r','3');c.setAttribute('fill',col);c.setAttribute('opacity','0.85');
         g.appendChild(c);
         if(!rowPts[ri])rowPts[ri]=[];
         rowPts[ri].push({x:sx,y:sy});
@@ -861,7 +861,7 @@ function drawTreeGrid(svg,zone,pxPts,col){
           ln.setAttribute('x1',from.x.toFixed(1));ln.setAttribute('y1',from.y.toFixed(1));
           ln.setAttribute('x2',to.x.toFixed(1));ln.setAttribute('y2',to.y.toFixed(1));
           ln.setAttribute('stroke',latCol);ln.setAttribute('stroke-width','1.5');
-          ln.setAttribute('opacity','0.75');ln.setAttribute('pointer-events','none');
+          ln.setAttribute('opacity','0.55');ln.setAttribute('pointer-events','none');
           svg.appendChild(ln);
           const len=Math.hypot(to.x-from.x,to.y-from.y);if(len<8)return;
           const ux=(to.x-from.x)/len,uy=(to.y-from.y)/len;
@@ -876,7 +876,7 @@ function drawTreeGrid(svg,zone,pxPts,col){
         ln.setAttribute('x1',lat.s.x.toFixed(1));ln.setAttribute('y1',lat.s.y.toFixed(1));
         ln.setAttribute('x2',lat.e.x.toFixed(1));ln.setAttribute('y2',lat.e.y.toFixed(1));
         ln.setAttribute('stroke',latCol);ln.setAttribute('stroke-width','1.5');
-        ln.setAttribute('opacity','0.75');ln.setAttribute('pointer-events','none');
+        ln.setAttribute('opacity','0.55');ln.setAttribute('pointer-events','none');
         svg.appendChild(ln);
         if(lat.pts.length>=2){
           const from=lat.smEnd===lat.s?lat.s:lat.e;
