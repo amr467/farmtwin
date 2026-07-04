@@ -303,7 +303,13 @@ button,input,select{font-family:inherit}
       <button class="btn on" onclick="sendAI()" style="flex-shrink:0">Send</button>
     </div>
     <div class="ai-key-row">
-      API key: <input type="password" id="ai-key" placeholder="sk-ant-…" oninput="localStorage.setItem('ft_ai_key',this.value)">
+      Worker URL: <input type="text" id="ai-worker-url" placeholder="https://your-worker.workers.dev"
+        oninput="localStorage.setItem('ft_worker_url',this.value);updateAIKeyStatus()"
+        value="">
+    </div>
+    <div class="ai-key-row">
+      Password: <input type="password" id="ai-key" placeholder="Enter password"
+        oninput="localStorage.setItem('ft_worker_password',this.value);updateAIKeyStatus()">
       <span id="ai-key-status" style="flex-shrink:0"></span>
     </div>
   </div>
@@ -2522,7 +2528,174 @@ window.exportSummaryCSV=function(){
 };
 
 // ── AI ASSISTANT ──────────────────────────────────────────────────────
-const AI_SYSTEM = `You are an irrigation design assistant for Amr Saudi's olive farm in Mafraq, Jordan.
+let aiHistory=[];
+let aiOpen=false;
+
+function buildProjectContext(){
+  const cz=zones.filter(z=>z.type!=='tank');
+  const tanks=zones.filter(z=>z.type==='tank');
+  const totalTrees=cz.reduce((a,z)=>a+(z._treeCount||0),0);
+  const totalLat=(cz.reduce((a,z)=>a+(z._lateralM||0),0)/1000).toFixed(2);
+  const totalSub=cz.reduce((a,z)=>a+(z._subMainM||0),0).toFixed(0);
+
+  let ctx=`Project: ${projId}
+Crop zones: ${cz.length} | Storage tanks: ${tanks.length} | Total olive trees: ${totalTrees}
+Total 20mm lateral: ${totalLat}km | Total sub-main: ${totalSub}m
+Pipes: ${pipes.filter(p=>p.status==='existing').length} existing, ${pipes.filter(p=>p.status==='planned').length} planned, ${pipes.filter(p=>p.status==='damaged').length} damaged`;
+
+  // Per-zone detail
+  if(cz.length){
+    ctx+='\n\nZONES:';
+    cz.forEach(z=>{
+      const area=(polyArea(z.polygon)/1000).toFixed(1);
+      ctx+=`\n- ${z.label}: ${area} dun, ${z._treeCount||'?'} trees`;
+      if(z._slope!=null)ctx+=`, slope ${z._slope}% ↓${compassDir(z._aspect||0)}`;
+      else ctx+=', slope unknown (not fetched)';
+      ctx+=`, sub-main ${z.subMainDia||'1.5'}″ ~${(z._subMainM||0).toFixed(0)}m`;
+      ctx+=`, laterals ~${(z._lateralM||0).toFixed(0)}m`;
+      if(z._splitNeeded>1)ctx+=`, ⚠ split into ${z._splitNeeded} pressure zones recommended`;
+      if(z._connMode)ctx+=`, connection: ${z._connMode}${z._connDist?' ('+z._connDist+'m feeder)':''}`;
+    });
+  }
+
+  // Pipe network by diameter
+  const dias=['5','4','3','2'];
+  const pipeRows=dias.map(d=>{
+    const ex=pipes.filter(p=>p.dia===d&&p.status==='existing').reduce((a,p)=>a+pipeLenM(p),0);
+    const pl=pipes.filter(p=>p.dia===d&&p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0);
+    if(ex+pl===0)return null;
+    return `${d}″: ${ex.toFixed(0)}m existing, ${pl.toFixed(0)}m planned, buy ${Math.max(0,pl-ex).toFixed(0)}m`;
+  }).filter(Boolean);
+  if(pipeRows.length)ctx+='\n\nPIPE NETWORK:\n'+pipeRows.map(r=>'- '+r).join('\n');
+
+  // Selected item context
+  if(selZone){
+    const area=(polyArea(selZone.polygon)/1000).toFixed(1);
+    ctx+=`\n\nSELECTED ZONE: "${selZone.label}"
+  Area: ${area} dun | Trees: ${selZone._treeCount||'?'} | Rows: ${selZone._rowCount||'?'}
+  Emitters: ${selZone._emitterCount||'?'} | Flow: ${((selZone._treeCount||0)*10/1000).toFixed(2)} m³/hr
+  Slope: ${selZone._slope!=null?selZone._slope+'%':'unknown'} ${selZone._aspect!=null?'↓'+compassDir(selZone._aspect):''}
+  Elevation range: ${selZone._elevRange!=null?selZone._elevRange+'m':'unknown'}
+  Sub-main: ${selZone.subMainDia||'1.5'}″, ~${(selZone._subMainM||0).toFixed(0)}m${selZone._smSegments>1?' ('+selZone._smSegments+' segments)':''}
+  Laterals: ~${(selZone._lateralM||0).toFixed(0)}m of 20mm
+  ${selZone._splitNeeded>1?'⚠ Zone split recommended: '+selZone._splitNeeded+' pressure zones':'No split needed'}
+  Price/tree: ${selZone.pricePerTree||0} JD`;
+  } else if(selPipe){
+    ctx+=`\n\nSELECTED PIPE: "${selPipe.label||'unlabeled'}"
+  Diameter: ${selPipe.dia}″ | Status: ${selPipe.status} | Length: ${pipeLenM(selPipe).toFixed(0)}m`;
+  } else if(selNode){
+    ctx+=`\n\nSELECTED NODE: "${selNode.label||selNode.type}"
+  Type: ${selNode.type}${selNode.elev!=null?' | Elevation: '+selNode.elev+'m':''}${selNode.pumpHead?' | Pump head: '+selNode.pumpHead+'m':''}`;
+  }
+
+  return ctx;
+}
+
+function toggleAI(){
+  aiOpen=!aiOpen;
+  document.getElementById('ai-panel').classList.toggle('open',aiOpen);
+  document.getElementById('ai-btn').classList.toggle('on',aiOpen);
+  if(aiOpen){
+    const savedPw=localStorage.getItem('ft_worker_password')||'';
+    const savedUrl=localStorage.getItem('ft_worker_url')||'';
+    const keyEl=document.getElementById('ai-key');
+    const urlEl=document.getElementById('ai-worker-url');
+    if(keyEl&&savedPw)keyEl.value=savedPw;
+    if(urlEl&&savedUrl)urlEl.value=savedUrl;
+    updateAIKeyStatus();
+    setTimeout(()=>document.getElementById('ai-input')?.focus(),100);
+  }
+}
+window.toggleAI=toggleAI;
+
+function updateAIKeyStatus(){
+  const pw=localStorage.getItem('ft_worker_password')||'';
+  const url=localStorage.getItem('ft_worker_url')||'';
+  const el=document.getElementById('ai-key-status');
+  if(!el)return;
+  el.textContent=(pw&&url)?'✓':'';
+  el.style.color='var(--ok)';
+}
+
+async function sendAI(){
+  const input=document.getElementById('ai-input');
+  const msg=input?.value.trim();
+  if(!msg)return;
+
+  const workerUrl=localStorage.getItem('ft_worker_url')||'';
+  const password=localStorage.getItem('ft_worker_password')||'';
+
+  if(!workerUrl||!password){
+    addAIMsg('assistant','Please enter your FarmTwin AI URL and password in the fields below. Ask the farm administrator for these details.');
+    return;
+  }
+
+  input.value='';
+  addAIMsg('user',msg);
+  const thinking=addAIMsg('thinking','Thinking…');
+  aiHistory.push({role:'user',content:msg});
+
+  try{
+    const res=await fetch(workerUrl,{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'X-FarmTwin-Password':password
+      },
+      body:JSON.stringify({
+        messages:aiHistory,
+        farmContext:buildProjectContext()
+      })
+    });
+
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error||`Server error ${res.status}`);
+
+    const reply=data.reply||'No response received.';
+    thinking.remove();
+    addAIMsg('assistant',reply);
+    aiHistory.push({role:'assistant',content:reply});
+    if(aiHistory.length>20)aiHistory=aiHistory.slice(-20);
+
+  }catch(err){
+    thinking.remove();
+    addAIMsg('assistant',`Connection error: ${err.message}. Check your Worker URL and password.`);
+    aiHistory.pop();
+  }
+}
+window.sendAI=sendAI;
+
+function addAIMsg(type,text){
+  const msgs=document.getElementById('ai-msgs');
+  if(!msgs)return null;
+  const div=document.createElement('div');
+  div.className='ai-msg '+type;
+  div.textContent=text;
+  msgs.appendChild(div);
+  msgs.scrollTop=msgs.scrollHeight;
+  return div;
+}
+
+function clearAIChat(){
+  aiHistory=[];
+  const msgs=document.getElementById('ai-msgs');
+  if(msgs){
+    msgs.innerHTML='';
+    addAIMsg('assistant','Chat cleared. Ask me anything about your farm or how to use FarmTwin.');
+  }
+}
+window.clearAIChat=clearAIChat;
+
+window.askAboutZone=function(zoneId){
+  const z=zones.find(x=>x.id===zoneId);
+  if(!z)return;
+  selectZone(z);
+  if(!aiOpen)toggleAI();
+  const area=(polyArea(z.polygon)/1000).toFixed(1);
+  const q=`Review zone "${z.label}" (${area} dun, ${z._treeCount||'?'} trees${z._slope!=null?', '+z._slope+'% slope '+compassDir(z._aspect||0):', slope unknown'}). Sub-main: ${z.subMainDia||'1.5'}″ ~${(z._subMainM||0).toFixed(0)}m. Laterals: ~${(z._lateralM||0).toFixed(0)}m. Any issues or recommendations?`;
+  const inp=document.getElementById('ai-input');
+  if(inp){inp.value=q;sendAI();}
+};
 You are embedded in FarmTwin — a digital twin app for planning the farm's drip irrigation network.
 
 FARM CONTEXT:
@@ -2556,126 +2729,6 @@ PROCUREMENT:
 Be direct, practical, and specific. Use metric units. Reference dunums for area (1 dunum = 1000 m²).
 Answer in under 200 words unless a detailed explanation is genuinely needed.
 If you need the current project data to answer, it will be provided below.`;
-
-let aiHistory=[];
-let aiOpen=false;
-
-function toggleAI(){
-  aiOpen=!aiOpen;
-  document.getElementById('ai-panel').classList.toggle('open',aiOpen);
-  document.getElementById('ai-btn').classList.toggle('on',aiOpen);
-  if(aiOpen){
-    // Load saved API key
-    const saved=localStorage.getItem('ft_ai_key')||'';
-    const keyEl=document.getElementById('ai-key');
-    if(keyEl&&saved)keyEl.value=saved;
-    updateAIKeyStatus();
-    document.getElementById('ai-input')?.focus();
-  }
-}
-window.toggleAI=toggleAI;
-
-function updateAIKeyStatus(){
-  const key=localStorage.getItem('ft_ai_key')||'';
-  const el=document.getElementById('ai-key-status');
-  if(!el)return;
-  el.textContent=key.startsWith('sk-ant-')?'✓':'';
-  el.style.color='var(--ok)';
-}
-
-function buildProjectContext(){
-  const cz=zones.filter(z=>z.type!=='tank');
-  const tanks=zones.filter(z=>z.type==='tank');
-  const totalTrees=cz.reduce((a,z)=>a+(z._treeCount||0),0);
-  const totalLat=(cz.reduce((a,z)=>a+(z._lateralM||0),0)/1000).toFixed(2);
-  const totalSub=cz.reduce((a,z)=>a+(z._subMainM||0),0).toFixed(0);
-  const existM=pipes.filter(p=>p.status==='existing').reduce((a,p)=>a+pipeLenM(p),0).toFixed(0);
-  const planM=pipes.filter(p=>p.status==='planned').reduce((a,p)=>a+pipeLenM(p),0).toFixed(0);
-  const selCtx=selZone?`\nSELECTED ZONE: ${selZone.label}, ${(polyArea(selZone.polygon)/1000).toFixed(1)} dun, ${selZone._treeCount||'?'} trees, slope ${selZone._slope!=null?selZone._slope+'%':'unknown'}, aspect ${selZone._aspect!=null?compassDir(selZone._aspect):'unknown'}, sub-main ${selZone.subMainDia||'1.5'}″ ~${(selZone._subMainM||0).toFixed(0)}m, laterals ~${(selZone._lateralM||0).toFixed(0)}m`
-    :selPipe?`\nSELECTED PIPE: ${selPipe.label}, ${selPipe.dia}″ ${selPipe.status}, ${pipeLenM(selPipe).toFixed(0)}m`
-    :selNode?`\nSELECTED NODE: ${selNode.label} (${selNode.type})${selNode.elev!=null?', elev '+selNode.elev+'m':''}`:'';
-  return `\nCURRENT PROJECT (${projId}):
-- ${cz.length} crop zones, ${totalTrees} trees total, ${tanks.length} storage tanks
-- Total laterals: ${totalLat}km of 20mm
-- Total sub-main: ${totalSub}m
-- Existing pipe network: ${existM}m | Planned additions: ${planM}m
-- Pipes total: ${pipes.length} (${pipes.filter(p=>p.status==='existing').length} existing, ${pipes.filter(p=>p.status==='planned').length} planned, ${pipes.filter(p=>p.status==='damaged').length} damaged)${selCtx}`;
-}
-
-async function sendAI(){
-  const input=document.getElementById('ai-input');
-  const msg=input?.value.trim();
-  if(!msg)return;
-  const key=localStorage.getItem('ft_ai_key')||'';
-  if(!key.startsWith('sk-ant-')){
-    addAIMsg('assistant','Please enter your Anthropic API key in the field below (starts with sk-ant-).');
-    return;
-  }
-  input.value='';
-  addAIMsg('user',msg);
-  const thinking=addAIMsg('thinking','Thinking…');
-  aiHistory.push({role:'user',content:msg});
-
-  try{
-    const systemWithCtx=AI_SYSTEM+buildProjectContext();
-    const res=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-6',
-        max_tokens:600,
-        system:systemWithCtx,
-        messages:aiHistory
-      })
-    });
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error?.message||`API error ${res.status}`);
-    const reply=data.content?.[0]?.text||'No response';
-    thinking.remove();
-    addAIMsg('assistant',reply);
-    aiHistory.push({role:'assistant',content:reply});
-    // Keep history to last 10 exchanges to avoid token overflow
-    if(aiHistory.length>20)aiHistory=aiHistory.slice(-20);
-  }catch(err){
-    thinking.remove();
-    addAIMsg('assistant',`Error: ${err.message}`);
-    aiHistory.pop(); // remove the user message that failed
-  }
-}
-window.sendAI=sendAI;
-
-function addAIMsg(type,text){
-  const msgs=document.getElementById('ai-msgs');
-  if(!msgs)return null;
-  const div=document.createElement('div');
-  div.className='ai-msg '+type;
-  div.textContent=text;
-  msgs.appendChild(div);
-  msgs.scrollTop=msgs.scrollHeight;
-  return div;
-}
-
-function clearAIChat(){
-  aiHistory=[];
-  const msgs=document.getElementById('ai-msgs');
-  if(msgs){
-    msgs.innerHTML='';
-    addAIMsg('assistant','Chat cleared. Ask me anything about your farm or irrigation design.');
-  }
-}
-window.clearAIChat=clearAIChat;
-
-// Context-aware quick-ask from zone card
-window.askAboutZone=function(zoneId){
-  const z=zones.find(x=>x.id===zoneId);
-  if(!z)return;
-  selectZone(z);
-  if(!aiOpen)toggleAI();
-  const area=(polyArea(z.polygon)/1000).toFixed(1);
-  const q=`Review zone "${z.label}" (${area} dun, ${z._treeCount||'?'} trees, ${z._slope!=null?z._slope+'% slope '+compassDir(z._aspect||0):'slope unknown'}). Sub-main: ${z.subMainDia||'1.5'}″ ~${(z._subMainM||0).toFixed(0)}m. Laterals: ~${(z._lateralM||0).toFixed(0)}m. Any issues or recommendations?`;
-  document.getElementById('ai-input').value=q;
-  sendAI();
-};
 
 // ── KEYBOARD ──────────────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
