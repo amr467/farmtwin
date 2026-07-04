@@ -1839,19 +1839,27 @@ function showZoneCard(zone){
     document.getElementById(id)?.addEventListener('change',refreshZoneCalc);
     document.getElementById(id)?.addEventListener('input',refreshZoneCalc);
   });
+  let _rzTimer=null;
   function refreshZoneCalc(){
+    // Read values immediately so zone object stays in sync
     zone.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
     zone.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
     zone.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
     zone.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
-    zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
-    zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||4;
+    zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||1;
+    zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||10;
     zone.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
-    redraw();
-    setTimeout(()=>{
-      const el=document.getElementById('pc-zc');
-      if(el)el.textContent=zoneCalcStr(zone,area,areaDun);
-    },50);
+    // Debounce the redraw — only fires 400ms after user stops typing/clicking
+    // This prevents the card from being recreated mid-edit, which was
+    // resetting inputs and making upward adjustments impossible.
+    clearTimeout(_rzTimer);
+    _rzTimer=setTimeout(()=>{
+      redraw();
+      setTimeout(()=>{
+        const el=document.getElementById('pc-zc');
+        if(el)el.textContent=zoneCalcStr(zone,area,areaDun);
+      },60);
+    },400);
   }
   document.getElementById('pc-wt')?.addEventListener('change',e=>{
     const sloped=e.target.value==='sloped';
