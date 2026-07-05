@@ -189,9 +189,9 @@ async function checkServer() {
     return;
   }
   el.className = 'checking';
-  el.textContent = '⟳ Checking...';
+  el.textContent = '⟳ Waking server...';
   try {
-    const r = await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(5000)});
+    const r = await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(35000)});
     const d = await r.json();
     if (d.ok) { el.className = 'ok'; el.textContent = '● Server ready'; }
   } catch {
@@ -375,7 +375,7 @@ async function analyzeAll() {
     return;
   }
   try {
-    await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(4000)});
+    await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(35000)});
   } catch {
     alert('Cannot reach the server at:\n' + SERVER + '\n\nCheck the URL is correct and the server is running.');
     return;
