@@ -173,7 +173,7 @@ L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
 
 // ── State ─────────────────────────────────────────────────────────────
 let mode='idle', drawPts=[], drawPolyline=null, firstPtMarker=null;
-let analysisAreas=[], markerLayers=[], corrMarkers=[], allResults=null;
+let analysisAreas=[], markerLayers=[], corrMarkers=[], patchLayers=[], allResults=null;
 let progTimer=null;
 const SNAP=18;
 
@@ -395,7 +395,20 @@ function mkIcon(type){
 }
 
 function drawResults(data,area){
-  data.patches.forEach(patch=>{
+  data.patches.forEach((patch, patchIdx)=>{
+    // Draw patch boundary if available
+    if (patch.hull && patch.hull.length >= 3) {
+      const color = patch.missing > (patch.alive * 0.15) ? '#f85149'  // >15% missing = red
+                  : patch.missing > 0 ? '#d29922'                       // some missing = yellow
+                  : '#3fb950';                                          // all present = green
+      const hullPoly = L.polygon(patch.hull, {
+        color, weight: 2, fillColor: color, fillOpacity: 0.05,
+        dashArray: '4,3', opacity: 0.7
+      }).addTo(map);
+      const patchLabel = `${patch.label}: ${patch.alive} alive · ${patch.missing} missing`;
+      hullPoly.bindTooltip(patchLabel, {sticky: true, className: 'patch-lbl'});
+      patchLayers.push(hullPoly);
+    }
     patch.trees.forEach(t=>{
       const m=L.marker([t.lat,t.lng],{icon:mkIcon('alive')})
         .bindTooltip(area.label+' · Alive',{className:'patch-lbl'});
@@ -523,7 +536,8 @@ function recalc(){
 // ── Clear ─────────────────────────────────────────────────────────────
 function clearResults(){
   [...markerLayers,...corrMarkers].forEach(m=>map.removeLayer(m.marker));
-  markerLayers=[]; corrMarkers=[];
+  patchLayers.forEach(l=>map.removeLayer(l));
+  markerLayers=[]; corrMarkers=[]; patchLayers=[];
 }
 
 function clearAll(){
