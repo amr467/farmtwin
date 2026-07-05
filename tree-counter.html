@@ -235,13 +235,24 @@ function cancelDraw() {
 }
 
 let lastClickTime = 0;
+const SNAP_PX = 18;
 
 map.on('click', e => {
   if (mode === 'draw') {
     const now = Date.now();
-    // Ignore single click if it's the second click of a double-click
-    if (now - lastClickTime < 300) return;
+    if (now - lastClickTime < 300) return; // ignore first click of dblclick
     lastClickTime = now;
+
+    // Snap to first point to close polygon
+    if (drawPts.length >= 3) {
+      const firstPt = map.latLngToContainerPoint(L.latLng(drawPts[0][0], drawPts[0][1]));
+      const clickPt = map.latLngToContainerPoint(e.latlng);
+      if (Math.hypot(firstPt.x - clickPt.x, firstPt.y - clickPt.y) < SNAP_PX) {
+        finishDraw();
+        return;
+      }
+    }
+
     drawPts.push([e.latlng.lat, e.latlng.lng]);
     updateDrawPreview();
   } else if (mode === 'correct-add') {
@@ -258,7 +269,19 @@ map.on('dblclick', e => {
   }
 });
 
-document.addEventListener('keydown', e => {
+map.on('mousemove', e => {
+  if (mode !== 'draw' || drawPts.length < 3) return;
+  const firstPt = map.latLngToContainerPoint(L.latLng(drawPts[0][0], drawPts[0][1]));
+  const movePt  = map.latLngToContainerPoint(e.latlng);
+  const near = Math.hypot(firstPt.x - movePt.x, firstPt.y - movePt.y) < SNAP_PX;
+  if (firstPointMarker) {
+    firstPointMarker.setRadius(near ? 10 : 6);
+    firstPointMarker.setStyle({fillColor: near ? '#3fb950' : '#58a6ff',
+                                color:     near ? '#3fb950' : '#58a6ff'});
+  }
+  if (near) showHint('Click to close polygon');
+  else if (drawPts.length >= 3) showHint(`${drawPts.length} points · Click first point or double-click to finish`);
+});
   if (e.key === 'Escape') {
     if (mode === 'draw') cancelDraw();
     if (mode.startsWith('correct')) endCorrect();
@@ -421,6 +444,8 @@ async function analyzeAll() {
       });
       clearInterval(progressTimer);
       const data = await res.json();
+      console.log('Raw server response:', JSON.stringify(data).slice(0, 500));
+      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       if (data.error) throw new Error(data.error);
 
       // Accumulate totals
