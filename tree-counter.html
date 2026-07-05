@@ -17,30 +17,24 @@
 html,body{height:100%;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
 #map{position:fixed;inset:0;z-index:0}
 
-/* ── Topbar ── */
 #topbar{position:fixed;top:0;left:0;right:0;height:48px;background:var(--sur);
   border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:8px;
-  padding:0 12px;z-index:600;flex-wrap:nowrap;overflow-x:auto}
-.logo{font-weight:700;font-size:14px;color:var(--tx);margin-right:4px;white-space:nowrap}
+  padding:0 12px;z-index:600;overflow-x:auto}
+.logo{font-weight:700;font-size:14px;white-space:nowrap}
 .logo span{color:var(--ok)}
 .btn{height:28px;padding:0 10px;border-radius:var(--rs);border:1px solid var(--bdr2);
-  background:var(--sur2);color:var(--tx2);cursor:pointer;font-size:12px;white-space:nowrap;
-  transition:background .15s,color .15s}
+  background:var(--sur2);color:var(--tx2);cursor:pointer;font-size:12px;white-space:nowrap}
 .btn:hover,.btn.on{background:var(--sur3);color:var(--tx);border-color:var(--bdr)}
 .btn.primary{background:#1a3a1a;border-color:var(--ok);color:var(--ok)}
 .btn.primary:hover{background:#1f4a1f}
-.btn.danger{background:#3a1a1a;border-color:var(--err);color:var(--err)}
 .sep{width:1px;height:20px;background:var(--bdr);flex-shrink:0}
-#server-status{font-size:11px;padding:3px 8px;border-radius:var(--rs);flex-shrink:0}
-#server-status.ok{background:#0d2c1a;color:var(--ok);border:1px solid var(--ok)}
-#server-status.err{background:#2c0d0d;color:var(--err);border:1px solid var(--err)}
-#server-status.checking{background:var(--sur2);color:var(--tx3);border:1px solid var(--bdr)}
+#srv{font-size:11px;padding:3px 8px;border-radius:var(--rs);flex-shrink:0;white-space:nowrap}
+#srv.ok{background:#0d2c1a;color:var(--ok);border:1px solid var(--ok)}
+#srv.err{background:#2c0d0d;color:var(--err);border:1px solid var(--err)}
+#srv.checking{background:var(--sur2);color:var(--tx3);border:1px solid var(--bdr)}
+#tool-lbl{font-size:11px;color:var(--tx3);padding:3px 8px;background:var(--sur2);
+  border-radius:var(--rs);border:1px solid var(--bdr);flex-shrink:0}
 
-/* ── Tool indicator ── */
-#tool-label{font-size:11px;color:var(--tx3);padding:3px 8px;
-  background:var(--sur2);border-radius:var(--rs);border:1px solid var(--bdr);flex-shrink:0}
-
-/* ── Results panel ── */
 #panel{position:fixed;top:56px;right:12px;width:320px;
   background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r);
   z-index:500;display:flex;flex-direction:column;max-height:calc(100vh - 70px);
@@ -48,87 +42,107 @@ html,body{height:100%;background:var(--bg);color:var(--tx);font-family:-apple-sy
 #panel-head{padding:10px 13px;border-bottom:1px solid var(--bdr);
   display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 #panel-body{flex:1;overflow-y:auto;padding:10px 13px}
-.sec-h{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-  color:var(--tx3);margin:10px 0 5px}
-.sec-h:first-child{margin-top:0}
 
-/* ── Progress bar ── */
-#progress-wrap{padding:8px 13px;border-top:1px solid var(--bdr);flex-shrink:0;display:none}
-#progress-bar-bg{height:4px;background:var(--sur3);border-radius:2px;overflow:hidden}
-#progress-bar{height:4px;background:var(--info);width:0;transition:width .3s;border-radius:2px}
-#progress-msg{font-size:10px;color:var(--tx3);margin-top:4px}
+#prog-wrap{padding:8px 13px;border-top:1px solid var(--bdr);flex-shrink:0;display:none}
+#prog-bg{height:4px;background:var(--sur3);border-radius:2px;overflow:hidden}
+#prog-bar{height:4px;background:var(--info);width:0;transition:width .3s;border-radius:2px}
+#prog-msg{font-size:10px;color:var(--tx3);margin-top:4px}
 
-/* ── Summary cards ── */
-.summary-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px}
-.stat-card{background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);
-  padding:8px;text-align:center}
-.stat-card .val{font-size:20px;font-weight:700;line-height:1.2}
-.stat-card .lbl{font-size:9px;color:var(--tx3);margin-top:2px}
-.stat-card.alive .val{color:var(--ok)}
-.stat-card.missing .val{color:var(--err)}
-.stat-card.total .val{color:var(--info)}
+.sum-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px}
+.stat{background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);padding:8px;text-align:center}
+.stat .v{font-size:20px;font-weight:700;line-height:1.2}
+.stat .l{font-size:9px;color:var(--tx3);margin-top:2px}
+.stat.alive .v{color:var(--ok)}
+.stat.miss .v{color:var(--err)}
+.stat.tot .v{color:var(--info)}
 
-/* ── Patch table ── */
-.patch-table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px}
-.patch-table th{padding:4px 6px;text-align:left;color:var(--tx3);font-size:9px;
+.ptbl{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px}
+.ptbl th{padding:4px 6px;text-align:left;color:var(--tx3);font-size:9px;
   text-transform:uppercase;border-bottom:1px solid var(--bdr);font-weight:600}
-.patch-table td{padding:5px 6px;border-bottom:1px solid var(--bdr2)}
-.patch-table tr:last-child td{border-bottom:none}
-.patch-table tr:hover td{background:var(--sur2);cursor:pointer}
-.miss-badge{display:inline-block;background:#3a1a1a;color:var(--err);
+.ptbl td{padding:5px 6px;border-bottom:1px solid var(--bdr2)}
+.ptbl tr:last-child td{border-bottom:none}
+.ptbl tr:hover td{background:var(--sur2);cursor:pointer}
+.mbadge{display:inline-block;background:#3a1a1a;color:var(--err);
   border-radius:var(--rs);padding:1px 5px;font-size:10px;font-weight:700}
-.ok-badge{display:inline-block;background:#0d2c1a;color:var(--ok);
+.okbadge{display:inline-block;background:#0d2c1a;color:var(--ok);
   border-radius:var(--rs);padding:1px 5px;font-size:10px}
-.conf-bar{display:inline-block;height:4px;border-radius:2px;background:var(--info);vertical-align:middle}
 
-/* ── Mode instructions ── */
-#mode-hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+#hint{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
   background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r);
   padding:8px 16px;font-size:12px;color:var(--tx2);z-index:500;
-  pointer-events:none;display:none;box-shadow:0 4px 16px #0006}
+  pointer-events:none;display:none;box-shadow:0 4px 16px #0006;white-space:nowrap}
 
-/* ── Leaflet custom markers ── */
-.tree-alive{width:10px;height:10px;border-radius:50%;background:#3fb950;
-  border:1.5px solid #fff;opacity:.85}
-.tree-missing{width:12px;height:12px;position:relative}
-.tree-missing::before,.tree-missing::after{content:'';position:absolute;
-  top:50%;left:50%;width:10px;height:2px;background:#f85149;transform-origin:center}
-.tree-missing::before{transform:translate(-50%,-50%) rotate(45deg)}
-.tree-missing::after{transform:translate(-50%,-50%) rotate(-45deg)}
-.tree-manual{width:10px;height:10px;border-radius:50%;background:#facc15;
-  border:1.5px solid #fff;opacity:.9}
-.patch-label{background:transparent;border:none;font-size:10px;font-weight:700;
+/* setup overlay */
+#setup{position:fixed;inset:0;z-index:1000;background:#000b;
+  display:flex;align-items:center;justify-content:center}
+#setup-box{background:var(--sur);border:1px solid var(--bdr2);border-radius:var(--r);
+  width:min(480px,92vw);padding:24px;box-shadow:0 16px 48px #000c}
+#setup-box h2{font-size:16px;font-weight:700;margin-bottom:16px;color:var(--tx)}
+#setup-box ol{padding-left:18px;color:var(--tx2);line-height:1.9;font-size:13px}
+#setup-box code{background:var(--sur2);border:1px solid var(--bdr);border-radius:3px;
+  padding:1px 5px;font-size:12px;color:var(--info);font-family:monospace}
+#setup-box .note{margin-top:14px;font-size:11px;color:var(--tx3);
+  background:var(--sur2);border-radius:var(--rs);padding:8px 10px;
+  border-left:3px solid var(--info)}
+
+.tree-alive{width:10px;height:10px;border-radius:50%;background:#3fb950;border:1.5px solid #fff;opacity:.85}
+.tree-miss{width:12px;height:12px;position:relative}
+.tree-miss::before,.tree-miss::after{content:'';position:absolute;top:50%;left:50%;
+  width:10px;height:2px;background:#f85149;transform-origin:center}
+.tree-miss::before{transform:translate(-50%,-50%) rotate(45deg)}
+.tree-miss::after{transform:translate(-50%,-50%) rotate(-45deg)}
+.tree-manual{width:10px;height:10px;border-radius:50%;background:#facc15;border:1.5px solid #fff}
+.patch-lbl{background:transparent;border:none;font-size:10px;font-weight:700;
   color:#fff;text-shadow:0 1px 3px #000;pointer-events:none}
 
-/* ── Scrollbar ── */
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-thumb{background:var(--bdr2);border-radius:2px}
 button,input,select{font-family:inherit}
-input{background:var(--sur2);border:1px solid var(--bdr2);border-radius:var(--rs);
-  color:var(--tx);padding:3px 7px;font-size:12px}
-input:focus{outline:none;border-color:var(--info)}
 </style>
 </head>
 <body>
+
+<!-- Setup instructions overlay (shown when server is offline) -->
+<div id="setup">
+  <div id="setup-box">
+    <h2>🌳 FarmTwin Tree Counter — Setup</h2>
+    <ol>
+      <li>Make sure you have <strong>Python</strong> installed on your computer</li>
+      <li>Open a terminal / Command Prompt and run:<br>
+        <code>pip install flask flask-cors pillow numpy requests opencv-python scipy</code>
+      </li>
+      <li>Download <strong>tree-counter.py</strong> and double-click <strong>start.bat</strong><br>
+        — or run: <code>python tree-counter.py</code>
+      </li>
+      <li>Come back here — the page will connect automatically</li>
+    </ol>
+    <div class="note">
+      ℹ The server runs on your computer at <code>localhost:5050</code>.<br>
+      Once started, this overlay disappears and you can begin drawing areas.
+    </div>
+    <div style="margin-top:16px;text-align:center">
+      <button class="btn primary" onclick="checkServer(true)">↻ Check again</button>
+    </div>
+  </div>
+</div>
 
 <!-- Topbar -->
 <div id="topbar">
   <span class="logo">Farm<span>Twin</span> · Tree Counter</span>
   <div class="sep"></div>
-  <input id="server-url" value="" placeholder="https://your-app.railway.app"
-    style="width:220px" title="Cloud server URL"
-    oninput="SERVER=this.value.trim();localStorage.setItem('tc_server',SERVER);checkServer()">
-  <div id="server-status" class="checking">⟳ Checking...</div>
+  <div id="srv" class="checking">⟳ Connecting...</div>
   <div class="sep"></div>
   <button class="btn" id="btn-draw" onclick="startDraw()">✏ Draw area</button>
-  <button class="btn" id="btn-import" onclick="importZones()">⬇ Import FarmTwin zones</button>
+  <button class="btn" id="btn-import" onclick="importZones()">⬇ FarmTwin zones</button>
   <button class="btn primary" id="btn-analyze" onclick="analyzeAll()" disabled>▶ Analyze</button>
-  <button class="btn" onclick="startCorrect()" id="btn-correct" title="Add/remove trees manually" style="display:none">✎ Correct</button>
-  <button class="btn danger" onclick="clearAll()" title="Clear all">✕ Clear</button>
+  <button class="btn" onclick="startCorrect()" id="btn-correct" style="display:none">✎ Correct</button>
+  <button class="btn" onclick="clearAll()" style="color:var(--err)">✕ Clear</button>
   <div class="sep"></div>
-  <div id="tool-label">Select draw tool</div>
+  <div id="tool-lbl">Draw area to begin</div>
   <div class="sep"></div>
-  <input id="proj-id" value="mafraq-farm-1" placeholder="Project ID" style="width:130px" title="FarmTwin project ID for zone import">
+  <input id="proj-id" value="mafraq-farm-1" placeholder="FarmTwin project ID"
+    style="width:140px;height:26px;background:var(--sur2);border:1px solid var(--bdr2);
+    border-radius:var(--rs);color:var(--tx);padding:0 8px;font-size:11px">
   <button class="btn" onclick="exportCSV()" id="btn-export" style="display:none">⬇ CSV</button>
 </div>
 
@@ -139,575 +153,409 @@ input:focus{outline:none;border-color:var(--info)}
     <button class="btn" onclick="document.getElementById('panel').style.display='none'">✕</button>
   </div>
   <div id="panel-body"></div>
-  <div id="progress-wrap">
-    <div id="progress-bar-bg"><div id="progress-bar"></div></div>
-    <div id="progress-msg"></div>
+  <div id="prog-wrap">
+    <div id="prog-bg"><div id="prog-bar"></div></div>
+    <div id="prog-msg"></div>
   </div>
 </div>
 
-<!-- Mode hint -->
-<div id="mode-hint"></div>
-
-<!-- Map -->
+<div id="hint"></div>
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const DEFAULT_SERVER = localStorage.getItem('tc_server') || '';
-let SERVER = DEFAULT_SERVER;
+const SERVER = 'http://localhost:5050';
 
-// ── Map init ──────────────────────────────────────────────────────────
-const map = L.map('map', {zoomControl: true}).setView([32.495, 36.168], 16);
-L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-  maxZoom: 21, attribution: '© Google'
-}).addTo(map);
+// ── Map ───────────────────────────────────────────────────────────────
+const map = L.map('map',{zoomControl:true}).setView([32.495,36.168],16);
+L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
+  {maxZoom:21,attribution:'© Google'}).addTo(map);
 
 // ── State ─────────────────────────────────────────────────────────────
-let mode = 'idle'; // idle | draw | correct-add | correct-remove
-let drawPts = [];
-let drawPolyline = null;
-let analysisAreas = [];   // [{polygon, layer, label}]
-let resultLayers = [];    // Leaflet layers showing results
-let markerLayers = [];    // individual tree markers
-let allResults = null;
-let progressTimer = null;
-let correctionMarkers = []; // manually added/removed markers
+let mode='idle', drawPts=[], drawPolyline=null, firstPtMarker=null;
+let analysisAreas=[], markerLayers=[], corrMarkers=[], allResults=null;
+let progTimer=null;
+const SNAP=18;
 
-// ── Server status check ───────────────────────────────────────────────
-// Restore saved server URL
-const savedUrl = localStorage.getItem('tc_server') || '';
-if (savedUrl) {
-  document.getElementById('server-url').value = savedUrl;
-  SERVER = savedUrl;
-}
-
-async function checkServer() {
-  const el = document.getElementById('server-status');
-  if (!SERVER) {
-    el.className = 'err';
-    el.textContent = '● Enter server URL';
-    return;
-  }
-  el.className = 'checking';
-  el.textContent = '⟳ Waking server...';
+// ── Server check ──────────────────────────────────────────────────────
+async function checkServer(manual=false) {
+  const el=document.getElementById('srv');
+  el.className='checking'; el.textContent='⟳ Connecting...';
   try {
-    const r = await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(35000)});
-    const d = await r.json();
-    if (d.ok) { el.className = 'ok'; el.textContent = '● Server ready'; }
-  } catch {
-    el.className = 'err';
-    el.textContent = '● Unreachable';
+    const r=await fetch(SERVER+'/ping',{signal:AbortSignal.timeout(4000)});
+    const d=await r.json();
+    if(d.ok){
+      el.className='ok'; el.textContent='● Server running';
+      document.getElementById('setup').style.display='none';
+      return true;
+    }
+  } catch(e) {
+    el.className='err'; el.textContent='● Start tree-counter.py first';
+    if(manual) document.getElementById('setup').style.display='flex';
   }
+  return false;
 }
 checkServer();
-setInterval(checkServer, 10000);
+setInterval(()=>checkServer(), 8000);
 
-// ── Tool label ────────────────────────────────────────────────────────
-function setToolLabel(msg) {
-  document.getElementById('tool-label').textContent = msg;
-}
-function showHint(msg) {
-  const el = document.getElementById('mode-hint');
-  el.textContent = msg;
-  el.style.display = msg ? 'block' : 'none';
-}
+function setTL(m){document.getElementById('tool-lbl').textContent=m;}
+function showHint(m){const e=document.getElementById('hint');e.textContent=m;e.style.display=m?'block':'none';}
 
-// ── Draw mode ─────────────────────────────────────────────────────────
-function startDraw() {
-  mode = 'draw';
-  drawPts = [];
-  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
-  map.getContainer().style.cursor = 'crosshair';
-  setToolLabel('Draw area — click to add points, double-click to finish');
-  showHint('Click to add points · Double-click to finish · Esc to cancel');
+// ── Draw ──────────────────────────────────────────────────────────────
+function startDraw(){
+  mode='draw'; drawPts=[];
+  if(drawPolyline){map.removeLayer(drawPolyline);drawPolyline=null;}
+  map.getContainer().style.cursor='crosshair';
   document.getElementById('btn-draw').classList.add('on');
+  setTL('Click to add points · Click first point or double-click to finish · Esc to cancel');
+  showHint('Click anywhere to start drawing');
 }
 
-function cancelDraw() {
-  mode = 'idle';
-  drawPts = [];
-  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
-  if (firstPointMarker) { map.removeLayer(firstPointMarker); firstPointMarker = null; }
-  map.getContainer().style.cursor = '';
-  setToolLabel('Select draw tool');
-  showHint('');
+function cancelDraw(){
+  mode='idle'; drawPts=[];
+  if(drawPolyline){map.removeLayer(drawPolyline);drawPolyline=null;}
+  if(firstPtMarker){map.removeLayer(firstPtMarker);firstPtMarker=null;}
+  map.getContainer().style.cursor='';
   document.getElementById('btn-draw').classList.remove('on');
+  setTL('Draw area to begin'); showHint('');
 }
 
-let lastClickTime = 0;
-const SNAP_PX = 18;
+function updatePreview(){
+  if(drawPolyline){map.removeLayer(drawPolyline);drawPolyline=null;}
+  if(firstPtMarker){map.removeLayer(firstPtMarker);firstPtMarker=null;}
+  if(!drawPts.length) return;
+  firstPtMarker=L.circleMarker(drawPts[0],{radius:6,color:'#58a6ff',
+    fillColor:'#58a6ff',fillOpacity:1,weight:2}).addTo(map);
+  if(drawPts.length>=2){
+    drawPolyline=L.polyline([...drawPts,drawPts[0]],
+      {color:'#58a6ff',weight:2,dashArray:'5,4',opacity:.85}).addTo(map);
+  }
+  if(drawPts.length>=3)
+    showHint(`${drawPts.length} points — click ● first point or double-click to finish`);
+}
 
-map.on('click', e => {
-  if (mode === 'draw') {
-    const now = Date.now();
-    if (now - lastClickTime < 300) return; // ignore first click of dblclick
-    lastClickTime = now;
-
-    // Snap to first point to close polygon
-    if (drawPts.length >= 3) {
-      const firstPt = map.latLngToContainerPoint(L.latLng(drawPts[0][0], drawPts[0][1]));
-      const clickPt = map.latLngToContainerPoint(e.latlng);
-      if (Math.hypot(firstPt.x - clickPt.x, firstPt.y - clickPt.y) < SNAP_PX) {
-        finishDraw();
-        return;
-      }
+let lastClick=0;
+map.on('click',e=>{
+  if(mode==='draw'){
+    const now=Date.now();
+    if(now-lastClick<300) return;
+    lastClick=now;
+    if(drawPts.length>=3){
+      const fp=map.latLngToContainerPoint(L.latLng(drawPts[0][0],drawPts[0][1]));
+      const cp=map.latLngToContainerPoint(e.latlng);
+      if(Math.hypot(fp.x-cp.x,fp.y-cp.y)<SNAP){finishDraw();return;}
     }
-
-    drawPts.push([e.latlng.lat, e.latlng.lng]);
-    updateDrawPreview();
-  } else if (mode === 'correct-add') {
-    addManualTree(e.latlng.lat, e.latlng.lng);
+    drawPts.push([e.latlng.lat,e.latlng.lng]);
+    updatePreview();
+  } else if(mode==='correct-add'){
+    addManualTree(e.latlng.lat,e.latlng.lng);
   }
 });
 
-map.on('dblclick', e => {
-  if (mode === 'draw') {
-    L.DomEvent.stop(e);
-    // Remove the last point added by the first click of the double-click
-    if (drawPts.length > 1) drawPts.pop();
-    finishDraw();
+map.on('mousemove',e=>{
+  if(mode!=='draw'||drawPts.length<3) return;
+  const fp=map.latLngToContainerPoint(L.latLng(drawPts[0][0],drawPts[0][1]));
+  const mp=map.latLngToContainerPoint(e.latlng);
+  const near=Math.hypot(fp.x-mp.x,fp.y-mp.y)<SNAP;
+  if(firstPtMarker){
+    firstPtMarker.setRadius(near?10:6);
+    firstPtMarker.setStyle({fillColor:near?'#3fb950':'#58a6ff',color:near?'#3fb950':'#58a6ff'});
   }
+  showHint(near?'Click to close polygon':`${drawPts.length} points — click ● or double-click to finish`);
 });
 
-map.on('mousemove', e => {
-  if (mode !== 'draw' || drawPts.length < 3) return;
-  const firstPt = map.latLngToContainerPoint(L.latLng(drawPts[0][0], drawPts[0][1]));
-  const movePt  = map.latLngToContainerPoint(e.latlng);
-  const near = Math.hypot(firstPt.x - movePt.x, firstPt.y - movePt.y) < SNAP_PX;
-  if (firstPointMarker) {
-    firstPointMarker.setRadius(near ? 10 : 6);
-    firstPointMarker.setStyle({fillColor: near ? '#3fb950' : '#58a6ff',
-                                color:     near ? '#3fb950' : '#58a6ff'});
-  }
-  if (near) showHint('Click to close polygon');
-  else if (drawPts.length >= 3) showHint(`${drawPts.length} points · Click first point or double-click to finish`);
+map.on('dblclick',e=>{
+  if(mode==='draw'){L.DomEvent.stop(e);if(drawPts.length>1)drawPts.pop();finishDraw();}
 });
 
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    if (mode === 'draw') cancelDraw();
-    if (mode.startsWith('correct')) endCorrect();
-  }
-  if (e.key === 'Enter' && mode === 'draw') finishDraw();
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(mode==='draw')cancelDraw();else if(mode.startsWith('correct'))endCorrect();}
+  if(e.key==='Enter'&&mode==='draw') finishDraw();
 });
 
-let firstPointMarker = null;
-
-function updateDrawPreview() {
-  if (drawPolyline) map.removeLayer(drawPolyline);
-  if (firstPointMarker) map.removeLayer(firstPointMarker);
-  if (drawPts.length === 0) return;
-
-  // Show first point as a circle
-  firstPointMarker = L.circleMarker(drawPts[0], {
-    radius: 6, color: '#58a6ff', fillColor: '#58a6ff',
-    fillOpacity: 1, weight: 2
-  }).addTo(map);
-
-  if (drawPts.length < 2) {
-    showHint('Keep clicking to add points · Double-click to finish · Esc to cancel');
-    return;
-  }
-
-  drawPolyline = L.polyline([...drawPts, drawPts[0]], {
-    color: '#58a6ff', weight: 2, dashArray: '5,4', opacity: 0.85
-  }).addTo(map);
-
-  showHint(`${drawPts.length} points · Double-click or Enter to finish · Esc to cancel`);
-}
-
-function finishDraw() {
-  if (drawPts.length < 3) { cancelDraw(); return; }
-  if (firstPointMarker) { map.removeLayer(firstPointMarker); firstPointMarker = null; }
-  const poly = L.polygon(drawPts, {
-    color: '#58a6ff', weight: 2, fillColor: '#58a6ff',
-    fillOpacity: 0.08, dashArray: '6,3'
-  }).addTo(map);
-
-  const label = `Area ${analysisAreas.length + 1}`;
-  poly.bindTooltip(label, {permanent: true, className: 'patch-label', direction: 'center'});
-
-  analysisAreas.push({polygon: [...drawPts], layer: poly, label});
-  if (drawPolyline) { map.removeLayer(drawPolyline); drawPolyline = null; }
-
+function finishDraw(){
+  if(drawPts.length<3){cancelDraw();return;}
+  if(firstPtMarker){map.removeLayer(firstPtMarker);firstPtMarker=null;}
+  if(drawPolyline){map.removeLayer(drawPolyline);drawPolyline=null;}
+  const poly=L.polygon(drawPts,{color:'#58a6ff',weight:2,
+    fillColor:'#58a6ff',fillOpacity:.08,dashArray:'6,3'}).addTo(map);
+  const label=`Area ${analysisAreas.length+1}`;
+  poly.bindTooltip(label,{permanent:true,className:'patch-lbl',direction:'center'});
+  analysisAreas.push({polygon:[...drawPts],layer:poly,label});
   cancelDraw();
-  updateAnalyzeBtn();
-}
-
-function updateAnalyzeBtn() {
-  const btn = document.getElementById('btn-analyze');
-  btn.disabled = analysisAreas.length === 0;
+  document.getElementById('btn-analyze').disabled=false;
+  setTL(`${analysisAreas.length} area(s) ready — click ▶ Analyze`);
 }
 
 // ── Import FarmTwin zones ─────────────────────────────────────────────
-async function importZones() {
-  const projId = document.getElementById('proj-id').value.trim() || 'mafraq-farm-1';
-  setToolLabel('Importing zones from FarmTwin...');
-  try {
-    let initApp, getDb, refFn, onVal;
-    const fbApp = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const fbDb  = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
-    initApp = fbApp.initializeApp; getDb = fbDb.getDatabase;
-    refFn = fbDb.ref; onVal = fbDb.onValue;
-
-    const app = initApp({
+async function importZones(){
+  const projId=document.getElementById('proj-id').value.trim()||'mafraq-farm-1';
+  setTL('Importing from FarmTwin...');
+  try{
+    const fbApp=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const fbDb =await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const app=fbApp.initializeApp({
       apiKey:"AIzaSyAkqts691Hg1uXhLDRloKoAgNotCwYx6XY",
       databaseURL:"https://pipemap-45e15-default-rtdb.europe-west1.firebasedatabase.app",
       projectId:"pipemap-45e15",
       appId:"1:172642929084:web:11605fc95947cbbb3403b9"
-    }, 'tree-counter-' + Date.now());
-
-    const db = getDb(app);
-    const r = refFn(db, `projects/${projId}/ft`);
-
-    onVal(r, snap => {
-      const d = snap.val();
-      if (!d?.zones) { setToolLabel('No zones found in project'); return; }
-
-      const zones = Array.isArray(d.zones) ? d.zones : Object.values(d.zones);
-      let imported = 0;
-      zones.forEach(zone => {
-        if (!zone.polygon || zone.polygon.length < 3) return;
-        const pts = zone.polygon.map(p => [p[0], p[1]]);
-        const poly = L.polygon(pts, {
-          color: '#d29922', weight: 2, fillColor: '#d29922',
-          fillOpacity: 0.08, dashArray: '6,3'
-        }).addTo(map);
-        const label = zone.label || `Zone ${imported+1}`;
-        poly.bindTooltip(label + ' (FT)', {permanent: true, className: 'patch-label', direction: 'center'});
-        analysisAreas.push({polygon: pts, layer: poly, label: label + ' (imported)'});
-        imported++;
+    },'tc-'+Date.now());
+    const db=fbDb.getDatabase(app);
+    const r=fbDb.ref(db,`projects/${projId}/ft`);
+    fbDb.onValue(r,snap=>{
+      const d=snap.val();
+      if(!d?.zones){setTL('No zones found');return;}
+      const zones=Array.isArray(d.zones)?d.zones:Object.values(d.zones);
+      let n=0;
+      zones.forEach(z=>{
+        if(!z.polygon||z.polygon.length<3) return;
+        const pts=z.polygon.map(p=>[p[0],p[1]]);
+        const poly=L.polygon(pts,{color:'#d29922',weight:2,
+          fillColor:'#d29922',fillOpacity:.08,dashArray:'6,3'}).addTo(map);
+        const lbl=(z.label||`Zone ${n+1}`)+' (FT)';
+        poly.bindTooltip(lbl,{permanent:true,className:'patch-lbl',direction:'center'});
+        analysisAreas.push({polygon:pts,layer:poly,label:lbl});
+        n++;
       });
-      setToolLabel(`Imported ${imported} zone(s) from FarmTwin`);
-      updateAnalyzeBtn();
-      if (imported > 0 && zones.length > 0) {
-        const first = zones.find(z => z.polygon?.length >= 3);
-        if (first) map.fitBounds(L.polygon(first.polygon.map(p=>[p[0],p[1]])).getBounds());
-      }
-    }, {onlyOnce: true});
-
-  } catch(e) {
-    setToolLabel('Import failed: ' + e.message);
-  }
+      setTL(`Imported ${n} zone(s)`);
+      document.getElementById('btn-analyze').disabled=n===0;
+    },{onlyOnce:true});
+  }catch(e){setTL('Import failed: '+e.message);}
 }
 
 // ── Analyze ───────────────────────────────────────────────────────────
-async function analyzeAll() {
-  if (analysisAreas.length === 0) return;
+async function analyzeAll(){
+  if(!analysisAreas.length) return;
+  const ok=await checkServer();
+  if(!ok){alert('Please start the server first.\n\nRun: python tree-counter.py\nor double-click start.bat');return;}
 
-  if (!SERVER) {
-    alert('Please enter your server URL in the field at the top left.');
-    return;
-  }
-  try {
-    await fetch(SERVER + '/ping', {signal: AbortSignal.timeout(35000)});
-  } catch {
-    alert('Cannot reach the server at:\n' + SERVER + '\n\nCheck the URL is correct and the server is running.');
-    return;
-  }
+  const panel=document.getElementById('panel');
+  panel.style.display='flex';
+  document.getElementById('panel-body').innerHTML=
+    '<div style="color:var(--tx3);padding:8px 0">Running analysis...</div>';
+  showProg(true); updProg(0,'Starting...');
 
-  // Show panel and progress
-  const panel = document.getElementById('panel');
-  panel.style.display = 'flex';
-  const body = document.getElementById('panel-body');
-  body.innerHTML = '<div style="color:var(--tx3);font-size:12px">Running analysis...</div>';
-  showProgress(true);
-  updateProgress(0, 'Starting...');
-
-  // Clear previous results
   clearResults();
-  allResults = {patches: [], total_alive: 0, total_missing: 0, total_expected: 0};
+  allResults={patches:[],total_alive:0,total_missing:0,total_expected:0};
 
-  // Analyze each area sequentially
-  for (let i = 0; i < analysisAreas.length; i++) {
-    const area = analysisAreas[i];
-    updateProgress(Math.round(i/analysisAreas.length*100), `Analyzing ${area.label}...`);
+  for(let i=0;i<analysisAreas.length;i++){
+    const area=analysisAreas[i];
+    const reqId='r'+Date.now();
+    updProg(Math.round(i/analysisAreas.length*100),`Analyzing ${area.label}...`);
 
-    const reqId = 'r' + Date.now();
+    progTimer=setInterval(async()=>{
+      try{const p=await fetch(SERVER+'/progress/'+reqId).then(r=>r.json());
+          updProg(p.pct,p.message);}catch{}
+    },1000);
 
-    // Poll progress using reqId
-    progressTimer = setInterval(async () => {
-      try {
-        const pr = await fetch(SERVER + '/progress/' + reqId).then(r => r.json());
-        updateProgress(pr.pct, pr.message);
-      } catch {}
-    }, 800);
-
-    try {
-      const res = await fetch(SERVER + '/analyze', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          polygon: area.polygon,
-          label: area.label,
-          reqId,
-          projectId: document.getElementById('proj-id').value
-        })
+    try{
+      const res=await fetch(SERVER+'/analyze',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({polygon:area.polygon,label:area.label,reqId,
+          projectId:document.getElementById('proj-id').value})
       });
-      clearInterval(progressTimer);
-      const data = await res.json();
-      console.log('Raw server response:', JSON.stringify(data).slice(0, 500));
-      if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
-      if (data.error) throw new Error(data.error);
+      clearInterval(progTimer);
+      const data=await res.json();
+      console.log('Result:',data.total_alive,'alive,',data.total_missing,'missing');
+      if(data.error) throw new Error(data.error);
 
-      // Accumulate totals
-      allResults.total_alive += data.total_alive;
-      allResults.total_missing += data.total_missing;
-      allResults.total_expected += data.total_expected;
-
-      // Rename patches to include area label
-      data.patches.forEach((p, j) => {
-        p.area_label = area.label;
-        p.global_id = `${i}_${j}`;
+      allResults.total_alive+=data.total_alive;
+      allResults.total_missing+=data.total_missing;
+      allResults.total_expected+=data.total_expected;
+      data.patches.forEach((p,j)=>{
+        p.area_label=area.label; p.gid=`${i}_${j}`;
         allResults.patches.push(p);
       });
-
-      // Draw markers
-      drawResults(data, area);
-
-    } catch(e) {
-      clearInterval(progressTimer);
-      updateProgress(0, 'Error: ' + e.message);
+      drawResults(data,area);
+    }catch(e){
+      clearInterval(progTimer);
+      updProg(0,'Error: '+e.message);
+      console.error(e);
     }
   }
 
-  // Sort patches by missing count
-  allResults.patches.sort((a,b) => b.missing - a.missing);
-
-  showProgress(false);
-  renderResultsPanel();
-  document.getElementById('btn-correct').style.display = 'inline-block';
-  document.getElementById('btn-export').style.display = 'inline-block';
-  setToolLabel('Analysis complete');
+  allResults.patches.sort((a,b)=>b.missing-a.missing);
+  showProg(false); renderPanel();
+  document.getElementById('btn-correct').style.display='inline-block';
+  document.getElementById('btn-export').style.display='inline-block';
+  setTL('Analysis complete');
 }
 
-function showProgress(show) {
-  document.getElementById('progress-wrap').style.display = show ? 'block' : 'none';
-}
-function updateProgress(pct, msg) {
-  document.getElementById('progress-bar').style.width = pct + '%';
-  document.getElementById('progress-msg').textContent = msg;
+function showProg(show){document.getElementById('prog-wrap').style.display=show?'block':'none';}
+function updProg(pct,msg){
+  document.getElementById('prog-bar').style.width=pct+'%';
+  document.getElementById('prog-msg').textContent=msg;
 }
 
-// ── Draw results on map ───────────────────────────────────────────────
-function makeTreeIcon(type) {
-  return L.divIcon({
-    className: 'tree-' + type,
-    iconSize: type === 'missing' ? [12,12] : [10,10],
-    iconAnchor: type === 'missing' ? [6,6] : [5,5]
-  });
+// ── Draw markers ──────────────────────────────────────────────────────
+function mkIcon(type){
+  return L.divIcon({className:'tree-'+type,
+    iconSize:type==='miss'?[12,12]:[10,10],
+    iconAnchor:type==='miss'?[6,6]:[5,5]});
 }
 
-function drawResults(data, area) {
-  data.patches.forEach((patch, pi) => {
-    // Draw alive trees
-    patch.trees.forEach(t => {
-      const m = L.marker([t.lat, t.lng], {icon: makeTreeIcon('alive')})
-        .bindTooltip(`${area.label} · Alive`, {className:'patch-label'});
-      m.on('click', () => {
-        if (mode === 'correct-remove') removeTreeMarker(m, t, 'alive');
-      });
-      m.addTo(map);
-      markerLayers.push({marker: m, data: t, type: 'alive', patchId: patch.global_id || pi});
+function drawResults(data,area){
+  data.patches.forEach(patch=>{
+    patch.trees.forEach(t=>{
+      const m=L.marker([t.lat,t.lng],{icon:mkIcon('alive')})
+        .bindTooltip(area.label+' · Alive',{className:'patch-lbl'});
+      m.on('click',()=>{if(mode==='correct-remove')removeMk(m);});
+      m.addTo(map); markerLayers.push({marker:m,type:'alive'});
     });
-
-    // Draw missing tree positions
-    patch.missing_trees.forEach(t => {
-      const m = L.marker([t.lat, t.lng], {icon: makeTreeIcon('missing')})
-        .bindTooltip(`${area.label} · Missing`, {className:'patch-label'});
-      m.on('click', () => {
-        if (mode === 'correct-remove') removeTreeMarker(m, t, 'missing');
-      });
-      m.addTo(map);
-      markerLayers.push({marker: m, data: t, type: 'missing', patchId: patch.global_id || pi});
+    patch.missing_trees.forEach(t=>{
+      const m=L.marker([t.lat,t.lng],{icon:mkIcon('miss')})
+        .bindTooltip(area.label+' · Missing',{className:'patch-lbl'});
+      m.on('click',()=>{if(mode==='correct-remove')removeMk(m);});
+      m.addTo(map); markerLayers.push({marker:m,type:'missing'});
     });
   });
 }
 
-// ── Results panel rendering ───────────────────────────────────────────
-function renderResultsPanel() {
-  const body = document.getElementById('panel-body');
-  if (!allResults) { body.innerHTML = ''; return; }
-
-  const {patches, total_alive, total_missing, total_expected} = allResults;
-
-  let h = '';
-
-  // Grand total summary
-  h += `<div class="summary-grid">
-    <div class="stat-card alive"><div class="val">${total_alive.toLocaleString()}</div><div class="lbl">Alive</div></div>
-    <div class="stat-card missing"><div class="val">${total_missing.toLocaleString()}</div><div class="lbl">Missing</div></div>
-    <div class="stat-card total"><div class="val">${total_expected.toLocaleString()}</div><div class="lbl">Expected</div></div>
+// ── Results panel ─────────────────────────────────────────────────────
+function renderPanel(){
+  const body=document.getElementById('panel-body');
+  if(!allResults){body.innerHTML='';return;}
+  const {patches,total_alive,total_missing,total_expected}=allResults;
+  let h='';
+  h+=`<div class="sum-grid">
+    <div class="stat alive"><div class="v">${total_alive.toLocaleString()}</div><div class="l">Alive</div></div>
+    <div class="stat miss"><div class="v">${total_missing.toLocaleString()}</div><div class="l">Missing</div></div>
+    <div class="stat tot"><div class="v">${total_expected.toLocaleString()}</div><div class="l">Expected</div></div>
   </div>`;
-
-  if (total_expected > 0) {
-    const pct = ((total_alive/total_expected)*100).toFixed(0);
-    h += `<div style="margin-bottom:10px">
+  if(total_expected>0){
+    const pct=((total_alive/total_expected)*100).toFixed(0);
+    const col=pct>=90?'var(--ok)':pct>=70?'var(--warn)':'var(--err)';
+    h+=`<div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--tx3);margin-bottom:3px">
-        <span>Tree survival rate</span><span style="color:${pct>=90?'var(--ok)':pct>=70?'var(--warn)':'var(--err)'}">${pct}%</span>
-      </div>
+        <span>Survival rate</span><span style="color:${col}">${pct}%</span></div>
       <div style="height:5px;background:var(--sur3);border-radius:3px;overflow:hidden">
-        <div style="height:5px;width:${pct}%;background:${pct>=90?'var(--ok)':pct>=70?'var(--warn)':'var(--err)'};border-radius:3px;transition:width .5s"></div>
-      </div>
-    </div>`;
+        <div style="height:5px;width:${pct}%;background:${col};border-radius:3px;transition:width .5s"></div>
+      </div></div>`;
   }
-
-  // Patches table — sorted by missing (highest first)
-  h += `<div class="sec-h">Patches — sorted by missing trees</div>`;
-  h += `<table class="patch-table">
-    <tr><th>Patch</th><th>Alive</th><th>Missing</th><th>Conf.</th></tr>`;
-
-  patches.forEach((p, i) => {
-    const confPct = Math.round((p.confidence||0)*100);
-    const missClass = p.missing > 0 ? 'miss-badge' : 'ok-badge';
-    h += `<tr onclick="focusPatch(${i})" title="Click to zoom to patch">
+  h+=`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+    color:var(--tx3);margin:8px 0 5px">Patches — most missing first</div>`;
+  h+=`<table class="ptbl"><tr><th>Patch</th><th>Alive</th><th>Missing</th><th>Conf</th></tr>`;
+  patches.forEach((p,i)=>{
+    h+=`<tr onclick="focusPatch(${i})">
       <td>
         <div style="font-weight:600">${p.label}</div>
-        ${p.area_label ? `<div style="font-size:9px;color:var(--tx3)">${p.area_label}</div>` : ''}
-        ${p.scattered ? '<div style="font-size:9px;color:var(--warn)">⚠ irregular</div>' : ''}
-        ${p.row_angle_deg!=null ? `<div style="font-size:9px;color:var(--tx3)">${p.row_angle_deg}° · ${p.row_spacing_m}m rows · ${p.tree_spacing_m}m trees</div>` : ''}
+        ${p.area_label?`<div style="font-size:9px;color:var(--tx3)">${p.area_label}</div>`:''}
+        ${p.scattered?'<div style="font-size:9px;color:var(--warn)">⚠ irregular</div>':''}
+        ${p.row_angle_deg!=null?`<div style="font-size:9px;color:var(--tx3)">${p.row_angle_deg}° · ${p.row_spacing_m}m rows</div>`:''}
       </td>
       <td style="text-align:center;color:var(--ok);font-weight:700">${p.alive}</td>
-      <td style="text-align:center"><span class="${missClass}">${p.missing}</span></td>
-      <td><span class="conf-bar" style="width:${confPct}%"></span> <span style="font-size:9px;color:var(--tx3)">${confPct}%</span></td>
+      <td style="text-align:center"><span class="${p.missing>0?'mbadge':'okbadge'}">${p.missing}</span></td>
+      <td style="font-size:9px;color:var(--tx3)">${Math.round((p.confidence||0)*100)}%</td>
     </tr>`;
   });
-  h += `</table>`;
-
-  // Correction mode note
-  h += `<div style="font-size:10px;color:var(--tx3);margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)">
-    Use <strong style="color:var(--tx2)">✎ Correct</strong> to manually add or remove trees.
-    Yellow dots = manually added.
+  h+=`</table>
+  <div style="font-size:10px;color:var(--tx3);margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)">
+    <strong style="color:var(--tx2)">✎ Correct</strong> to add/remove trees manually.<br>
+    Left-click = add (yellow) · Right-click marker = remove
   </div>`;
-
-  body.innerHTML = h;
+  body.innerHTML=h;
 }
 
-function focusPatch(idx) {
-  const patch = allResults?.patches[idx];
-  if (!patch || (!patch.trees.length && !patch.missing_trees.length)) return;
-  const all = [...patch.trees, ...patch.missing_trees];
-  const bounds = L.latLngBounds(all.map(t => [t.lat, t.lng]));
-  map.fitBounds(bounds.pad(0.2));
+function focusPatch(i){
+  const p=allResults?.patches[i]; if(!p) return;
+  const all=[...p.trees,...p.missing_trees];
+  if(!all.length) return;
+  map.fitBounds(L.latLngBounds(all.map(t=>[t.lat,t.lng])).pad(0.2));
 }
 
-// ── Manual correction mode ────────────────────────────────────────────
-function startCorrect() {
-  mode = 'correct-add';
-  map.getContainer().style.cursor = 'crosshair';
+// ── Correction mode ───────────────────────────────────────────────────
+function startCorrect(){
+  mode='correct-add';
+  map.getContainer().style.cursor='crosshair';
   document.getElementById('btn-correct').classList.add('on');
-  document.getElementById('btn-correct').textContent = '✎ Adding trees';
-  setToolLabel('Correction: click to ADD trees · Right-click to REMOVE · Esc to exit');
-  showHint('Left-click = add alive tree  ·  Right-click marker = mark as missing  ·  Esc = exit correction');
-
-  // Right-click on map = remove mode toggle
-  map.on('contextmenu', onMapRightClick);
+  document.getElementById('btn-correct').textContent='✎ Correcting';
+  setTL('Left-click = add alive tree · Right-click marker = remove · Esc to exit');
+  showHint('Left-click to add tree · Right-click to remove · Esc to exit');
+  map.on('contextmenu',onRightClick);
 }
 
-function onMapRightClick(e) {
-  if (!mode.startsWith('correct')) return;
-  // Find nearest marker within 15px
-  let nearest = null, minDist = 20;
-  markerLayers.concat(correctionMarkers).forEach(({marker}) => {
-    const pt = map.latLngToContainerPoint(marker.getLatLng());
-    const ept = map.latLngToContainerPoint(e.latlng);
-    const d = Math.hypot(pt.x-ept.x, pt.y-ept.y);
-    if (d < minDist) { minDist = d; nearest = marker; }
+function onRightClick(e){
+  if(!mode.startsWith('correct')) return;
+  let nearest=null,minD=20;
+  [...markerLayers,...corrMarkers].forEach(({marker})=>{
+    const pt=map.latLngToContainerPoint(marker.getLatLng());
+    const ep=map.latLngToContainerPoint(e.latlng);
+    const d=Math.hypot(pt.x-ep.x,pt.y-ep.y);
+    if(d<minD){minD=d;nearest=marker;}
   });
-  if (nearest) {
+  if(nearest){
     map.removeLayer(nearest);
-    markerLayers = markerLayers.filter(m => m.marker !== nearest);
-    correctionMarkers = correctionMarkers.filter(m => m.marker !== nearest);
-    recalcTotals();
+    markerLayers=markerLayers.filter(m=>m.marker!==nearest);
+    corrMarkers=corrMarkers.filter(m=>m.marker!==nearest);
+    recalc();
   }
 }
 
-function addManualTree(lat, lng) {
-  const m = L.marker([lat, lng], {icon: makeTreeIcon('manual')})
-    .bindTooltip('Manual · Alive', {className:'patch-label'});
-  m.addTo(map);
-  correctionMarkers.push({marker: m, data: {lat, lng}, type: 'alive'});
-  recalcTotals();
+function addManualTree(lat,lng){
+  const m=L.marker([lat,lng],{icon:mkIcon('manual')})
+    .bindTooltip('Manual',{className:'patch-lbl'});
+  m.addTo(map); corrMarkers.push({marker:m,type:'alive'}); recalc();
 }
 
-function removeTreeMarker(marker, data, type) {
+function removeMk(marker){
   map.removeLayer(marker);
-  markerLayers = markerLayers.filter(m => m.marker !== marker);
-  recalcTotals();
+  markerLayers=markerLayers.filter(m=>m.marker!==marker);
+  recalc();
 }
 
-function endCorrect() {
-  mode = 'idle';
-  map.off('contextmenu', onMapRightClick);
-  map.getContainer().style.cursor = '';
+function endCorrect(){
+  mode='idle'; map.off('contextmenu',onRightClick);
+  map.getContainer().style.cursor='';
   document.getElementById('btn-correct').classList.remove('on');
-  document.getElementById('btn-correct').textContent = '✎ Correct';
-  setToolLabel('Analysis complete');
-  showHint('');
-  recalcTotals();
+  document.getElementById('btn-correct').textContent='✎ Correct';
+  setTL('Analysis complete'); showHint(''); recalc();
 }
 
-function recalcTotals() {
-  if (!allResults) return;
-  // Recount from current markers
-  const alive = markerLayers.filter(m => m.type === 'alive').length
-              + correctionMarkers.filter(m => m.type === 'alive').length;
-  const missing = markerLayers.filter(m => m.type === 'missing').length;
-  allResults.total_alive = alive;
-  allResults.total_missing = missing;
-  allResults.total_expected = alive + missing;
-  renderResultsPanel();
+function recalc(){
+  if(!allResults) return;
+  allResults.total_alive =markerLayers.filter(m=>m.type==='alive').length
+                         +corrMarkers.filter(m=>m.type==='alive').length;
+  allResults.total_missing=markerLayers.filter(m=>m.type==='missing').length;
+  allResults.total_expected=allResults.total_alive+allResults.total_missing;
+  renderPanel();
 }
 
 // ── Clear ─────────────────────────────────────────────────────────────
-function clearResults() {
-  markerLayers.forEach(m => map.removeLayer(m.marker));
-  markerLayers = [];
-  correctionMarkers.forEach(m => map.removeLayer(m.marker));
-  correctionMarkers = [];
-  resultLayers.forEach(l => map.removeLayer(l));
-  resultLayers = [];
+function clearResults(){
+  [...markerLayers,...corrMarkers].forEach(m=>map.removeLayer(m.marker));
+  markerLayers=[]; corrMarkers=[];
 }
 
-function clearAll() {
+function clearAll(){
   clearResults();
-  analysisAreas.forEach(a => map.removeLayer(a.layer));
-  analysisAreas = [];
-  allResults = null;
-  document.getElementById('panel').style.display = 'none';
-  document.getElementById('btn-correct').style.display = 'none';
-  document.getElementById('btn-export').style.display = 'none';
-  updateAnalyzeBtn();
-  setToolLabel('Select draw tool');
-  if (progressTimer) clearInterval(progressTimer);
+  analysisAreas.forEach(a=>map.removeLayer(a.layer));
+  analysisAreas=[]; allResults=null;
+  document.getElementById('panel').style.display='none';
+  document.getElementById('btn-correct').style.display='none';
+  document.getElementById('btn-export').style.display='none';
+  document.getElementById('btn-analyze').disabled=true;
+  if(progTimer) clearInterval(progTimer);
+  setTL('Draw area to begin');
 }
 
-// ── CSV Export ────────────────────────────────────────────────────────
-function exportCSV() {
-  if (!allResults) return;
-  let csv = 'Patch,Area,Status,Latitude,Longitude,Row,Tree Spacing (m),Row Spacing (m),Confidence\r\n';
-  allResults.patches.forEach(patch => {
-    patch.trees.forEach(t => {
-      csv += `"${patch.label}","${patch.area_label||''}","alive",${t.lat.toFixed(7)},${t.lng.toFixed(7)},${t.row||''},${patch.tree_spacing_m||''},${patch.row_spacing_m||''},${patch.confidence||''}\r\n`;
-    });
-    patch.missing_trees.forEach(t => {
-      csv += `"${patch.label}","${patch.area_label||''}","missing",${t.lat.toFixed(7)},${t.lng.toFixed(7)},,${patch.tree_spacing_m||''},${patch.row_spacing_m||''},${patch.confidence||''}\r\n`;
-    });
+// ── CSV export ────────────────────────────────────────────────────────
+function exportCSV(){
+  if(!allResults) return;
+  let csv='Patch,Area,Status,Latitude,Longitude,Row,Row spacing (m),Tree spacing (m),Confidence\r\n';
+  allResults.patches.forEach(p=>{
+    p.trees.forEach(t=>csv+=`"${p.label}","${p.area_label||''}","alive",${t.lat.toFixed(7)},${t.lng.toFixed(7)},${t.row||''},${p.row_spacing_m||''},${p.tree_spacing_m||''},${p.confidence||''}\r\n`);
+    p.missing_trees.forEach(t=>csv+=`"${p.label}","${p.area_label||''}","missing",${t.lat.toFixed(7)},${t.lng.toFixed(7)},,${p.row_spacing_m||''},${p.tree_spacing_m||''},${p.confidence||''}\r\n`);
   });
-  correctionMarkers.forEach(m => {
-    const ll = m.marker.getLatLng();
-    csv += `"Manual","","manual_alive",${ll.lat.toFixed(7)},${ll.lng.toFixed(7)},,,\r\n`;
-  });
-  // Summary at bottom
-  csv += `\r\n"TOTAL","","alive",${allResults.total_alive},,,,,\r\n`;
-  csv += `"TOTAL","","missing",${allResults.total_missing},,,,,\r\n`;
-  csv += `"TOTAL","","expected",${allResults.total_expected},,,,,\r\n`;
-
-  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `tree-count-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  corrMarkers.forEach(m=>{const ll=m.marker.getLatLng();
+    csv+=`"Manual","","manual_alive",${ll.lat.toFixed(7)},${ll.lng.toFixed(7)},,,\r\n`;});
+  csv+=`\r\n"TOTAL","","alive",${allResults.total_alive},,,,,\r\n`;
+  csv+=`"TOTAL","","missing",${allResults.total_missing},,,,,\r\n`;
+  csv+=`"TOTAL","","expected",${allResults.total_expected},,,,,\r\n`;
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`tree-count-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 </script>
 </body>
