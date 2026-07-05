@@ -282,6 +282,8 @@ map.on('mousemove', e => {
   if (near) showHint('Click to close polygon');
   else if (drawPts.length >= 3) showHint(`${drawPts.length} points · Click first point or double-click to finish`);
 });
+
+document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (mode === 'draw') cancelDraw();
     if (mode.startsWith('correct')) endCorrect();
