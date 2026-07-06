@@ -53,8 +53,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
   transform:translate(-50%,-50%);pointer-events:none;display:none;z-index:440}
 .hidden{display:none!important}
 
-/* hud — vertical panel on right edge */
-#hud{position:fixed;top:56px;right:10px;bottom:12px;width:78px;background:var(--sur);
+/* hud — vertical panel on left edge */
+#hud{position:fixed;top:56px;left:10px;bottom:12px;width:78px;background:var(--sur);
   border:1px solid var(--bdr);border-radius:10px;
   display:flex;flex-direction:column;align-items:center;padding:8px 4px;gap:6px;
   z-index:600;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.3)}
@@ -73,8 +73,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
 
 /* property card */
 #pcard{position:absolute;z-index:850;background:var(--sur);border:1px solid var(--bdr2);
-  border-radius:var(--r);padding:11px 13px;min-width:220px;max-width:270px;
-  box-shadow:0 8px 24px #000a;pointer-events:all;display:none}
+  border-radius:var(--r);padding:0;min-width:230px;max-width:290px;
+  max-height:calc(100vh - 80px);
+  box-shadow:0 8px 24px #000a;pointer-events:all;display:none;
+  overflow:hidden}
+#pcard-inner{padding:11px 13px;overflow-y:auto;max-height:calc(100vh - 80px)}
+#pcard-drag{cursor:move;user-select:none;padding:6px 13px 0;font-size:9px;
+  color:var(--tx3);letter-spacing:.1em;text-transform:uppercase;text-align:center;
+  border-bottom:1px dashed var(--bdr);margin-bottom:4px}
+#pcard-drag::before{content:'⋮⋮  drag  ⋮⋮'}
 .pc-h{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
   margin-bottom:8px}
 .pc-r{display:flex;align-items:center;gap:7px;margin-bottom:5px}
@@ -216,7 +223,7 @@ button,input,select{font-family:inherit}
   <svg id="vtx-svg" class="ol" xmlns="http://www.w3.org/2000/svg"></svg>
   <div id="node-layer"></div>
   <div id="snap-ring"></div>
-  <div id="pcard"></div>
+  <div id="pcard"><div id="pcard-drag"></div><div id="pcard-inner"></div></div>
   <div class="hidden" id="ctx-bd" onclick="closeCtx()"></div>
   <div id="ctx"></div>
   <div id="sb">
@@ -1736,23 +1743,102 @@ window.deleteSelected=function(){
 };
 
 // ── PROPERTY CARDS ────────────────────────────────────────────────────
-function closeCard(){const c=document.getElementById('pcard');c.style.display='none';c.innerHTML='';}
+let cardWasDragged=false;
+let cardPos=null;
+
+function closeCard(){
+  const c=document.getElementById('pcard');
+  c.style.display='none';
+  document.getElementById('pcard-inner').innerHTML='';
+  cardWasDragged=false;
+  cardPos=null;
+}
 window.closeCard=closeCard;
 
 function posCard(lat,lng){
   const c=document.getElementById('pcard'),mw=document.getElementById('mw');
+  // If user dragged the card, keep its current position (don't jump)
+  if(cardWasDragged&&cardPos){
+    c.style.left=cardPos.x+'px';c.style.top=cardPos.y+'px';c.style.display='block';
+    constrainCard();return;
+  }
   const px=ll2p(lat,lng);
+  const cw=280,ch=Math.min(500, window.innerHeight-100);
   let x=px.x+22,y=px.y-22;
-  if(x+280>mw.offsetWidth)x=px.x-295;
-  if(y+400>mw.offsetHeight)y=mw.offsetHeight-410;
+  if(x+cw>mw.offsetWidth)x=px.x-cw-15;
+  if(x<8)x=8;
+  if(y+ch>mw.offsetHeight)y=mw.offsetHeight-ch-10;
   if(y<8)y=8;
   c.style.left=x+'px';c.style.top=y+'px';c.style.display='block';
+  cardPos={x,y};
 }
+
+// Keep card within viewport when window is resized
+function constrainCard(){
+  const c=document.getElementById('pcard');
+  if(c.style.display==='none')return;
+  const mw=document.getElementById('mw');
+  const r=c.getBoundingClientRect();
+  const mwR=mw.getBoundingClientRect();
+  let x=parseFloat(c.style.left)||0, y=parseFloat(c.style.top)||0;
+  if(x+r.width>mwR.width-8)x=mwR.width-r.width-8;
+  if(y+r.height>mwR.height-8)y=mwR.height-r.height-8;
+  if(x<8)x=8;
+  if(y<8)y=8;
+  c.style.left=x+'px';c.style.top=y+'px';
+  cardPos={x,y};
+}
+window.addEventListener('resize',constrainCard);
+
+// Drag the card by its top handle
+(function initCardDrag(){
+  const c=document.getElementById('pcard');
+  const drag=document.getElementById('pcard-drag');
+  if(!drag||!c)return;
+  let start=null;
+  drag.addEventListener('mousedown',e=>{
+    e.preventDefault();
+    start={mx:e.clientX,my:e.clientY,
+           cx:parseFloat(c.style.left)||0,cy:parseFloat(c.style.top)||0};
+    document.body.style.cursor='move';
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp,{once:true});
+  });
+  drag.addEventListener('touchstart',e=>{
+    const t=e.touches[0];
+    start={mx:t.clientX,my:t.clientY,
+           cx:parseFloat(c.style.left)||0,cy:parseFloat(c.style.top)||0};
+    document.addEventListener('touchmove',onTouchMove,{passive:false});
+    document.addEventListener('touchend',onUp,{once:true});
+  },{passive:true});
+  function onMove(e){
+    if(!start)return;
+    const nx=start.cx+(e.clientX-start.mx);
+    const ny=start.cy+(e.clientY-start.my);
+    c.style.left=nx+'px'; c.style.top=ny+'px';
+    cardPos={x:nx,y:ny}; cardWasDragged=true;
+  }
+  function onTouchMove(e){
+    e.preventDefault();
+    const t=e.touches[0]; if(!start)return;
+    const nx=start.cx+(t.clientX-start.mx);
+    const ny=start.cy+(t.clientY-start.my);
+    c.style.left=nx+'px'; c.style.top=ny+'px';
+    cardPos={x:nx,y:ny}; cardWasDragged=true;
+  }
+  function onUp(){
+    start=null;
+    document.body.style.cursor='';
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('touchmove',onTouchMove);
+    constrainCard();
+  }
+})();
 
 function showPipeCard(pipe){
   if(!pipe)return;
   const len=pipeLenM(pipe);
-  const c=document.getElementById('pcard');
+  const c=document.getElementById('pcard-inner');
   c.innerHTML=`<div class="pc-h" style="color:${pipeCol(pipe)}">PIPE — ${pipe.label}</div>
     <div class="pc-r"><label>Label</label><input id="pc-lbl" value="${pipe.label}"></div>
     <div class="pc-r"><label>Diameter</label><select id="pc-dia">${['5','4','3','2','20mm'].map(d=>`<option value="${d}"${pipe.dia===d?' selected':''}>${d}"</option>`).join('')}</select></div>
@@ -1796,7 +1882,7 @@ window.reuseP=function(id){
 
 function showNodeCard(nd){
   if(!nd)return;
-  const c=document.getElementById('pcard');
+  const c=document.getElementById('pcard-inner');
   const isW=nd.type==='well',isT=nd.type==='tank',isP=nd.type==='pump';
   c.innerHTML=`<div class="pc-h" style="color:${NCOL[nd.type]||'#888'}">${nd.type.toUpperCase()} — ${nd.label}</div>
     <div class="pc-r"><label>Label</label><input id="pc-nl" value="${nd.label}"></div>
@@ -1831,7 +1917,7 @@ window.applyNode=function(id){
 
 function showZoneCard(zone){
   if(!zone)return;
-  const c=document.getElementById('pcard');
+  const c=document.getElementById('pcard-inner');
   const area=polyArea(zone.polygon);const areaDun=(area/1000).toFixed(1);
   const isTank=zone.type==='tank';
   const isExisting=zone.type==='existing';
