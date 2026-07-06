@@ -53,16 +53,19 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
   transform:translate(-50%,-50%);pointer-events:none;display:none;z-index:440}
 .hidden{display:none!important}
 
-/* hud */
-#hud{height:60px;background:var(--sur);border-top:1px solid var(--bdr);
-  display:flex;align-items:center;padding:0 10px;gap:5px;flex-shrink:0;z-index:600;overflow-x:auto}
-.hgrp{display:flex;gap:3px;align-items:center;flex-shrink:0}
-.hsep{width:1px;height:30px;background:var(--bdr);margin:0 3px}
-.tool{width:44px;height:44px;padding:0;display:flex;flex-direction:column;
+/* hud — vertical panel on right edge */
+#hud{position:fixed;top:56px;right:10px;bottom:12px;width:78px;background:var(--sur);
+  border:1px solid var(--bdr);border-radius:10px;
+  display:flex;flex-direction:column;align-items:center;padding:8px 4px;gap:6px;
+  z-index:600;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+.hgrp{display:flex;flex-direction:column;gap:3px;align-items:center;flex-shrink:0;width:100%}
+.hsep{width:70%;height:1px;background:var(--bdr);margin:3px 0}
+.tool{width:60px;height:44px;padding:0;display:flex;flex-direction:column;
   align-items:center;justify-content:center;gap:1px;font-size:17px}
 .tool .lbl{font-size:8px;font-weight:700;letter-spacing:.04em}
-.pill{height:26px;padding:0 9px;border-radius:13px;border:1.5px solid var(--bdr2);
-  background:var(--sur2);color:var(--tx);font-size:11px;cursor:pointer;font-family:inherit}
+.pill{height:24px;padding:0 8px;border-radius:12px;border:1.5px solid var(--bdr2);
+  background:var(--sur2);color:var(--tx);font-size:10px;cursor:pointer;font-family:inherit;
+  min-width:60px;text-align:center}
 .pill.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
 .pill.ex.on{border-color:var(--ok);background:#0d2c1a;color:var(--ok)}
 .pill.pl.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
@@ -275,9 +278,11 @@ button,input,select{font-family:inherit}
   <div id="acct-inner">
     <div class="acct-head">
       <span class="acct-title">💰 Accounting</span>
-      <div style="display:flex;gap:6px">
-        <button class="btn" onclick="exportAcctCSV()" title="Export full GAAP-compatible CSV">⬇ Export CSV</button>
-        <button class="btn" onclick="exportSummaryCSV()" title="Export one-page summary">⬇ Summary</button>
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        <button class="btn" onclick="exportAcctCSV()" title="Materials + expenses">⬇ Expenses</button>
+        <button class="btn" onclick="exportWaterCSV()" title="Water consumption projection">⬇ Water</button>
+        <button class="btn" onclick="exportYieldCSV()" title="Yield projection">⬇ Yield</button>
+        <button class="btn" onclick="exportCombinedCSV()" title="All-in-one">⬇ All</button>
         <button class="btn" onclick="toggleAcct()">✕ Close</button>
       </div>
     </div>
@@ -369,6 +374,75 @@ const SNAP_PX=20;        // pixel snap threshold for existing-layer to existing-
 const ANG_SNAP=8;        // degrees angle magnetism
 const PAR_DIST=50;       // metres for parallel detection
 const ZONE_COLS=['#4ade80','#60a5fa','#fb923c','#f472b6','#a78bfa','#34d399','#fbbf24'];
+const EXISTING_ZONE_COL='#84a173';
+
+// ── OLIVE VARIETY DATA ─────────────────────────────────────────────────
+// Water: L/tree/year at maturity (mature = 8+ years old)
+// Yield: kg fruit/tree/year at maturity (UP year); DOWN year = 0.5x
+// Oil %: oil weight / fruit weight
+const OLIVE_VARIETIES = {
+  'nabali':          {label:'Nabali',          waterL:2500, yieldKg:40, oilPct:20, type:'Dual'},
+  'nabali_muhassan': {label:'Nabali Muhassan', waterL:2500, yieldKg:45, oilPct:22, type:'Dual'},
+  'grossane':        {label:'Grossane',        waterL:2800, yieldKg:35, oilPct:20, type:'Table'},
+  'coratina':        {label:'Coratina',        waterL:2200, yieldKg:30, oilPct:25, type:'Oil'},
+  'picual':          {label:'Picual',          waterL:2400, yieldKg:35, oilPct:24, type:'Oil'},
+  'arbequina':       {label:'Arbequina',       waterL:2000, yieldKg:25, oilPct:20, type:'Oil'},
+  'koroneiki':       {label:'Koroneiki',       waterL:1800, yieldKg:20, oilPct:22, type:'Oil'},
+  'frantoio':        {label:'Frantoio',        waterL:2400, yieldKg:30, oilPct:22, type:'Oil'},
+};
+
+// Age scaling: multiplier for water/yield based on tree age
+// Year 1-2: 10% (irrigation only, no yield)
+// Year 3-4: 30%
+// Year 5-6: 60%
+// Year 7: 85%
+// Year 8+: 100%
+function ageFactor(age){
+  if(age<=0)return 0;
+  if(age<=2)return 0.10;
+  if(age<=4)return 0.30;
+  if(age<=6)return 0.60;
+  if(age<=7)return 0.85;
+  return 1.0;
+}
+// Yield factor uses same scaling but zero for years 1-2 (no yield)
+function yieldAgeFactor(age){
+  if(age<=2)return 0;
+  return ageFactor(age);
+}
+
+// Compute per-tree water (m³/year) for a given variety at a given age
+function treeWaterM3(variety, age){
+  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
+  return (v.waterL*ageFactor(age))/1000;
+}
+
+// Compute per-tree yield (kg/year) at variety, age, and bearing state
+// bearingState: 'up' or 'down'
+function treeYieldKg(variety, age, bearingState){
+  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
+  const factor=yieldAgeFactor(age)*(bearingState==='up'?1.0:0.5);
+  return v.yieldKg*factor;
+}
+
+// Compute per-tree oil yield (kg/year)
+function treeOilKg(variety, age, bearingState){
+  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
+  return treeYieldKg(variety, age, bearingState) * (v.oilPct/100);
+}
+
+// Get the bearing state for a given year, given the initial state.
+// Alternate bearing: state flips each year.
+function bearingAtYear(startYear, startState, targetYear){
+  const flip=(targetYear-startYear)%2;
+  return flip===0 ? startState : (startState==='up'?'down':'up');
+}
+
+// Get age of trees in zone at a given year
+function zoneAgeAtYear(zone, year){
+  const py=zone.plantYear||(zone.type==='existing'?2007:2026);
+  return year-py;
+}
 const SCOL={existing:'#3fb950',planned:'#58a6ff',damaged:'#f85149'};
 const SDASH={existing:null,planned:'9,5',damaged:'4,3'};
 const NCOL={well:'#22d3ee',tank:'#fb923c',pump:'#a78bfa',endpoint:'#4ade80'};
@@ -729,7 +803,7 @@ function drawZones(){
     lbl.setAttribute('text-anchor','middle');lbl.setAttribute('dominant-baseline','middle');
     lbl.setAttribute('fill',col);lbl.setAttribute('font-size','11');lbl.setAttribute('font-weight','bold');
     lbl.setAttribute('font-family','-apple-system,sans-serif');lbl.setAttribute('pointer-events','none');
-    lbl.textContent=(isTank?'🏗 ':'')+zone.label;
+    lbl.textContent=(isTank?'🏗 ':(zone.type==='existing'?'🫒 ':''))+zone.label;
     zSvg.appendChild(lbl);
 
     if(!isTank)drawTreeGrid(zSvg,zone,pts,col);
@@ -765,6 +839,7 @@ function drawZones(){
 
 function drawTreeGrid(svg,zone,pxPts,col){
   if(!zone.rowSpacingM||!zone.treeSpacingM)return;
+  const isExisting=zone.type==='existing';
 
   // Row direction unit vectors
   const angleDeg=zone.rowAngleDeg??15;
@@ -857,7 +932,8 @@ function drawTreeGrid(svg,zone,pxPts,col){
       laterals.push({s,e,smEnd,smMid,isFlat,ri:parseInt(riStr),pts});
     });
 
-    // Draw 20mm laterals (amber)
+    // Draw 20mm laterals (amber) — skip for existing zones (no new pipes needed)
+    if(!isExisting){
     const latCol='#fde68a';
     laterals.forEach(lat=>{
       if(!lat.pts.length)return;
@@ -962,6 +1038,7 @@ function drawTreeGrid(svg,zone,pxPts,col){
       const last=seg[seg.length-1];return p2ll(last.x,last.y);
     });
     zone._smEndLLs=laterals.map(l=>p2ll(l.smEnd.x,l.smEnd.y));
+    } // end if(!isExisting) — no pipe rendering for existing zones
   } // end if(!skipGrid)
 
   // ── Zone split suggestion ─────────────────────────────────────────────
@@ -1077,6 +1154,7 @@ function drawZoneConnections(){
   const maxSearchM=400;
   zones.forEach(zone=>{
     if(zone.type==='tank')return;
+    if(zone.type==='existing')return;
     if(!zone._smInletLL&&(!zone._smInletLLs||!zone._smInletLLs.length))return;
     const inletLLs=zone._smInletLLs||[zone._smInletLL];
     const rowSpM=zone.rowSpacingM||7;
@@ -1575,12 +1653,21 @@ function finishZone(){
   if(drawPts.length<3){cancelDraw();return;}
   pushH();
   const isTank=pendingZoneType==='tank';
+  const isExisting=pendingZoneType==='existing';
+  const nCropZones=zones.filter(z=>z.type==='zone'||z.type==='existing').length;
   const zone={id:'z'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
-    label:(isTank?'Tank ':'Zone ')+zc++,polygon:[...drawPts],
-    rowSpacingM:7,treeSpacingM:7,emitters:1,lhrPerEmitter:10,rowAngleDeg:15,pricePerTree:0,subMainDia:'1.5',
-    color:isTank?'#fb923c':ZONE_COLS[zones.filter(z=>z.type!=='tank').length%ZONE_COLS.length],
-    type:isTank?'tank':'zone',
-    ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{})};
+    label:(isTank?'Tank ':(isExisting?'Existing ':'Zone '))+zc++,
+    polygon:[...drawPts],
+    rowSpacingM:7,treeSpacingM:7,rowAngleDeg:15,
+    variety:'nabali',
+    color: isTank ? '#fb923c'
+         : isExisting ? EXISTING_ZONE_COL
+         : ZONE_COLS[nCropZones%ZONE_COLS.length],
+    type: isTank?'tank' : (isExisting?'existing':'zone'),
+    // Type-specific defaults:
+    ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{}),
+    ...(isExisting?{plantYear:2007, bearingState:'up'}:{}),  // existing default: 20 years old in 2027
+    ...(!isTank && !isExisting?{emitters:1,lhrPerEmitter:10,pricePerTree:0,subMainDia:'1.5',plantYear:2026}:{})};
   zones.push(zone);cancelDraw();selZone=zone;
   pushToFB();redraw();showZoneCard(zone);
 }
@@ -1592,10 +1679,11 @@ function showCtx(cx,cy,lat,lng){
   const ring=document.createElement('div');ring.className='ctx-ring';
   const items=[
     {type:'well',icon:'💧',lbl:'WELL',cls:'ci-well',angle:-90},
-    {type:'tank',icon:'🏗',lbl:'TANK',cls:'ci-tank',angle:-30},
-    {type:'pump',icon:'⚡',lbl:'PUMP',cls:'ci-pump',angle:30},
-    {type:'endpoint',icon:'🌿',lbl:'END',cls:'ci-ep',angle:90},
-    {type:'tank-area',icon:'💦',lbl:'POOL',cls:'ci-tank',angle:150},
+    {type:'tank',icon:'🏗',lbl:'TANK',cls:'ci-tank',angle:-45},
+    {type:'pump',icon:'⚡',lbl:'PUMP',cls:'ci-pump',angle:0},
+    {type:'endpoint',icon:'🌿',lbl:'END',cls:'ci-ep',angle:45},
+    {type:'tank-area',icon:'💦',lbl:'POOL',cls:'ci-tank',angle:90},
+    {type:'existing-area',icon:'🫒',lbl:'EXISTING',cls:'ci-ep',angle:135},
   ];
   items.forEach(item=>{
     const rad=item.angle*Math.PI/180,r=68;
@@ -1616,6 +1704,7 @@ window.closeCtx=closeCtx;
 // ── NODE PLACEMENT ────────────────────────────────────────────────────
 function placeNode(type,lat,lng){
   if(type==='tank-area'){setTool('zone');pendingZoneType='tank';updateZoneToolColor();return;}
+  if(type==='existing-area'){setTool('zone');pendingZoneType='existing';updateZoneToolColor();return;}
   pushH();
   const node={id:'n'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
     type,lat,lng,label:{well:'W',tank:'T',pump:'P',endpoint:'E'}[type]+(nc++),elev:null,
@@ -1627,6 +1716,7 @@ function placeNode(type,lat,lng){
 function updateZoneToolColor(){
   const b=document.getElementById('t-zone');if(!b)return;
   if(pendingZoneType==='tank'&&tool==='zone'){b.style.background='var(--tank)';b.style.borderColor='var(--tank)';b.style.color='#0d1117';}
+  else if(pendingZoneType==='existing'&&tool==='zone'){b.style.background=EXISTING_ZONE_COL;b.style.borderColor=EXISTING_ZONE_COL;b.style.color='#0d1117';}
   else{b.style.background='';b.style.borderColor='';b.style.color='';}
 }
 
@@ -1744,6 +1834,8 @@ function showZoneCard(zone){
   const c=document.getElementById('pcard');
   const area=polyArea(zone.polygon);const areaDun=(area/1000).toFixed(1);
   const isTank=zone.type==='tank';
+  const isExisting=zone.type==='existing';
+  const isCrop=!isTank; // both zone and existing are crop zones
   // Tank volume calc
   let volHtml='';
   if(isTank){
@@ -1752,20 +1844,14 @@ function showZoneCard(zone){
     const sa=zone.soilAngle||45;
     let vol=0;
     if(wt==='vertical'){
-      vol=area*md; // m² × m = m³
+      vol=area*md;
     } else {
-      // Sloped earthen walls: each wall slopes inward at soilAngle from horizontal.
-      // Horizontal setback per wall = depth / tan(soilAngle).
-      // The base of the tank is the top surface shrunk inward by setback on all sides.
-      // Volume = (topArea + baseArea) / 2 × depth  (average of top and base cross-sections)
       const slope=md/Math.tan(sa*Math.PI/180);
       const perim=polygonPerim(zone.polygon);
-      // Shrink area by perimeter×setback (Minkowski erosion approximation)
       const baseArea=Math.max(0,area-perim*slope+Math.PI*slope*slope);
       vol=(area+baseArea)/2*md;
     }
     zone._volumeM3=vol;
-    // Fill percentage (0-100). waterLevel stores fill pct for tanks.
     const fillPct=zone.fillPct??Math.round((zone.waterLevel??2)/(md)*100);
     const fillVol=vol*(fillPct/100);
     volHtml=`<div class="pc-hint" style="margin-top:4px">
@@ -1775,7 +1861,42 @@ function showZoneCard(zone){
   }
   const rsp=zone.rowSpacingM||7,tsp=zone.treeSpacingM||7;
   const trees=zone._treeCount??Math.round(area/(rsp*tsp));
-  c.innerHTML=`<div class="pc-h" style="color:${zone.color}">${isTank?'TANK POOL':'ZONE'} — ${zone.label}</div>
+
+  // Build variety dropdown options
+  const varietyOpts = Object.entries(OLIVE_VARIETIES).map(([k,v])=>
+    `<option value="${k}"${(zone.variety||'nabali')===k?' selected':''}>${v.label} (${v.type})</option>`).join('');
+
+  // Water and yield display
+  let waterYieldHtml='';
+  if(isCrop){
+    const currentYear=2027;
+    const plantYear=zone.plantYear||(isExisting?2007:2026);
+    const age=currentYear-plantYear;
+    const variety=zone.variety||'nabali';
+    const bearing=isExisting?(zone.bearingState||'up'):
+                  bearingAtYear(2027, 'up', currentYear); // new zones: first productive year is up
+    const waterPerTree=treeWaterM3(variety, age);
+    const yieldPerTree=treeYieldKg(variety, age, bearing);
+    const oilPerTree=treeOilKg(variety, age, bearing);
+    const totalWater=waterPerTree*trees;
+    const totalYield=yieldPerTree*trees;
+    const totalOil=oilPerTree*trees;
+    waterYieldHtml=`<div class="pc-sect" style="border-top:1px solid var(--bdr);margin-top:8px;padding-top:8px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:5px">${currentYear} Estimates</div>
+      <div style="font-size:11px;line-height:1.6">
+        Tree age: <b>${age} years</b> · Bearing: <b style="color:${bearing==='up'?'var(--ok)':'var(--warn)'}">${bearing.toUpperCase()}</b><br>
+        Water/tree: <b>${waterPerTree.toFixed(2)}m³/yr</b> · Zone total: <b style="color:var(--info)">${totalWater.toFixed(0)}m³/yr</b><br>
+        Yield/tree: <b>${yieldPerTree.toFixed(1)}kg</b> · Zone total: <b style="color:var(--ok)">${totalYield.toFixed(0)}kg</b><br>
+        Oil/tree: <b>${oilPerTree.toFixed(1)}kg</b> · Zone total: <b style="color:#facc15">${totalOil.toFixed(0)}kg</b>
+      </div>
+    </div>`;
+  }
+
+  const typeLabel = isTank ? 'TANK POOL'
+                  : isExisting ? '🫒 EXISTING OLIVES'
+                  : 'ZONE';
+
+  c.innerHTML=`<div class="pc-h" style="color:${zone.color}">${typeLabel} — ${zone.label}</div>
     <div class="pc-r"><label>Name</label><input id="pc-zn" value="${zone.label}"></div>
     ${isTank?`<div class="pc-r"><label>Wall type</label><select id="pc-wt">
       <option value="vertical"${(zone.wallType||'vertical')==='vertical'?' selected':''}>Vertical (concrete/block)</option>
@@ -1791,7 +1912,17 @@ function showZoneCard(zone){
     </div>
     <div class="pc-r"><label>Max flow (m³/hr)</label><input id="pc-mf" type="number" value="${zone.maxFlowM3h||5}" min="0"></div>
     ${volHtml}`
-    :`<div class="pc-r"><label>Row direction</label>
+    :`<div class="pc-r"><label>Olive variety</label>
+      <select id="pc-var">${varietyOpts}</select></div>
+    <div class="pc-r"><label>Plant year</label>
+      <input id="pc-py" type="number" value="${zone.plantYear||(isExisting?2007:2026)}" min="1900" max="2030" step="1">
+    </div>
+    ${isExisting?`<div class="pc-r"><label>2027 bearing</label>
+      <select id="pc-bs">
+        <option value="up"${(zone.bearingState||'up')==='up'?' selected':''}>UP year (heavy yield)</option>
+        <option value="down"${zone.bearingState==='down'?' selected':''}>DOWN year (light yield)</option>
+      </select></div>`:''}
+    <div class="pc-r"><label>Row direction</label>
     <select id="pc-ra">
       <option value="0"${(zone.rowAngleDeg??15)===0?' selected':''}>0° — rows run N-S</option>
       <option value="15"${(zone.rowAngleDeg??15)===15?' selected':''}>15° CCW — NNW (olive typical)</option>
@@ -1803,62 +1934,61 @@ function showZoneCard(zone){
       <option value="-15"${(zone.rowAngleDeg??15)===-15?' selected':''}>15° CW — NNE</option>
       <option value="-45"${(zone.rowAngleDeg??15)===-45?' selected':''}>45° CW — NE-SW diagonal</option>
     </select></div>
-    <div class="pc-r"><label>Sub-main dia</label>
+    ${!isExisting?`<div class="pc-r"><label>Sub-main dia</label>
     <select id="pc-smd">
       <option value="1.5"${(zone.subMainDia||'1.5')==='1.5'?' selected':''}>1½″ — standard</option>
       <option value="2"${(zone.subMainDia||'1.5')==='2'?' selected':''}>2″ — long runs / high flow</option>
-    </select></div>
+    </select></div>`:''}
     <div class="pc-r"><label>Row spacing (m)<br><span style="color:var(--tx3);font-size:9px">row-to-row</span></label><input id="pc-rs" type="number" value="${zone.rowSpacingM||7}" min="1" step="0.5"></div>
     <div class="pc-r"><label>Tree spacing (m)<br><span style="color:var(--tx3);font-size:9px">within row</span></label><input id="pc-ts" type="number" value="${zone.treeSpacingM||7}" min="1" step="0.5"></div>
-    <div class="pc-r"><label>Emitters/tree</label><input id="pc-em" type="number" value="${zone.emitters||2}" min="1" max="8"></div>
-    <div class="pc-r"><label>L/hr per emitter</label><input id="pc-lr" type="number" value="${zone.lhrPerEmitter||4}" min="1"></div>
-    <div class="pc-r"><label>Price/tree (JD)</label><input id="pc-pt" type="number" value="${zone.pricePerTree||0}" min="0" step="0.5" placeholder="0"></div>
+    ${!isExisting?`<div class="pc-r"><label>Emitters/tree</label><input id="pc-em" type="number" value="${zone.emitters||1}" min="1" max="8"></div>
+    <div class="pc-r"><label>L/hr per emitter</label><input id="pc-lr" type="number" value="${zone.lhrPerEmitter||10}" min="1"></div>
+    <div class="pc-r"><label>Price/tree (JD)</label><input id="pc-pt" type="number" value="${zone.pricePerTree||0}" min="0" step="0.5" placeholder="0"></div>`:''}
     <div class="pc-hint" id="pc-zc" style="white-space:pre-line">${zoneCalcStr(zone,area,areaDun)}</div>
     <div style="margin-top:5px;display:flex;gap:5px;align-items:center;flex-wrap:wrap">
       ${zone._slope!=null
         ?`<span style="font-size:9px;color:${zone._slope>5?'var(--err)':zone._slope>2?'var(--warn)':'var(--ok)'}">⛰ ${zone._slope}% slope ${zone._aspect!=null?'↓'+compassDir(zone._aspect):''} · ${zone._elevRange??'?'}m range</span>`
         :zone._elevError
           ?`<span style="font-size:9px;color:var(--err)">⚠ ${zone._elevError}</span>`
-          :`<span style="font-size:9px;color:var(--tx3)">No slope data — pipes shown flat</span>`}
+          :`<span style="font-size:9px;color:var(--tx3)">No slope data</span>`}
       <button class="pcb" style="height:20px;font-size:9px;padding:0 6px;margin-left:auto" onclick="fetchElevById('${zone.id}')">${zone._elevQuerying?'Fetching…':zone._slope!=null?'⊕ Re-fetch':'⊕ Fetch slope'}</button>
-    </div>`}
+    </div>${waterYieldHtml}`}
     <div class="pc-hint">${areaDun} dunum · ${area.toFixed(0)}m²</div>
     <div class="pc-btns">
       <button class="pcb ok" onclick="applyZone('${zone.id}')">✓ Apply</button>
       <button class="pcb del" onclick="deleteSelected()">× Delete</button>
       <button class="pcb" onclick="closeCard()">✕</button>
     </div>
-    ${!isTank?`<div class="pc-sect">
-      <div style="display:flex;gap:5px">
-        <button class="pcb act" style="flex:1;height:26px" onclick="materializeZonePipes('${zone.id}')">⊕ Create sub-main as pipes</button>
+    ${isCrop?`<div class="pc-sect">
+      <div style="display:flex;gap:5px;flex-wrap:wrap">
+        ${!isExisting?`<button class="pcb act" style="flex:1;height:26px;min-width:0" onclick="materializeZonePipes('${zone.id}')">⊕ Sub-main pipes</button>`:''}
+        <button class="pcb" style="height:26px;white-space:nowrap" onclick="exportZoneCSV('${zone.id}')">⬇ CSV projection</button>
         <button class="pcb" style="height:26px;white-space:nowrap" onclick="askAboutZone('${zone.id}')">🤖 Ask Claude</button>
       </div>
     </div>`:''}`;
   // live update tree calc and wall type toggle
-  ['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt'].forEach(id=>{
+  const inputIds=['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt','pc-var','pc-py','pc-bs'];
+  inputIds.forEach(id=>{
     document.getElementById(id)?.addEventListener('change',refreshZoneCalc);
     document.getElementById(id)?.addEventListener('input',refreshZoneCalc);
   });
   let _rzTimer=null;
   function refreshZoneCalc(){
-    // Read values immediately so zone object stays in sync
     zone.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
-    zone.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
+    if(document.getElementById('pc-smd'))zone.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
     zone.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
     zone.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
-    zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||1;
-    zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||10;
-    zone.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
-    // Debounce the redraw — only fires 400ms after user stops typing/clicking
-    // This prevents the card from being recreated mid-edit, which was
-    // resetting inputs and making upward adjustments impossible.
+    if(document.getElementById('pc-em'))zone.emitters=parseFloat(document.getElementById('pc-em')?.value)||1;
+    if(document.getElementById('pc-lr'))zone.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||10;
+    if(document.getElementById('pc-pt'))zone.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
+    if(document.getElementById('pc-var'))zone.variety=document.getElementById('pc-var')?.value||'nabali';
+    if(document.getElementById('pc-py'))zone.plantYear=parseInt(document.getElementById('pc-py')?.value)||2026;
+    if(document.getElementById('pc-bs'))zone.bearingState=document.getElementById('pc-bs')?.value||'up';
     clearTimeout(_rzTimer);
     _rzTimer=setTimeout(()=>{
       redraw();
-      setTimeout(()=>{
-        const el=document.getElementById('pc-zc');
-        if(el)el.textContent=zoneCalcStr(zone,area,areaDun);
-      },60);
+      // Re-render the whole card so water/yield update
+      showZoneCard(zone);
     },400);
   }
   document.getElementById('pc-wt')?.addEventListener('change',e=>{
@@ -1915,16 +2045,26 @@ window.applyZone=function(id){
     z.maxDepth=parseFloat(document.getElementById('pc-md')?.value)||3;
     z.soilAngle=parseFloat(document.getElementById('pc-sa')?.value)||45;
     z.fillPct=parseInt(document.getElementById('pc-fp')?.value)??50;
-    z.waterLevel=z.fillPct/100*z.maxDepth; // keep in sync
+    z.waterLevel=z.fillPct/100*z.maxDepth;
     z.maxFlowM3h=parseFloat(document.getElementById('pc-mf')?.value)||5;
   } else {
+    // Common fields for both zone and existing
     z.rowAngleDeg=parseFloat(document.getElementById('pc-ra')?.value)??15;
-    z.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
     z.rowSpacingM=parseFloat(document.getElementById('pc-rs')?.value)||7;
     z.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
-    z.emitters=parseFloat(document.getElementById('pc-em')?.value)||2;
-    z.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||4;
-    z.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
+    z.variety=document.getElementById('pc-var')?.value||'nabali';
+    z.plantYear=parseInt(document.getElementById('pc-py')?.value)||(z.type==='existing'?2007:2026);
+    // Existing-only
+    if(z.type==='existing'){
+      z.bearingState=document.getElementById('pc-bs')?.value||'up';
+    }
+    // New-zone-only (has pipes)
+    if(z.type==='zone'){
+      z.subMainDia=document.getElementById('pc-smd')?.value||'1.5';
+      z.emitters=parseFloat(document.getElementById('pc-em')?.value)||1;
+      z.lhrPerEmitter=parseFloat(document.getElementById('pc-lr')?.value)||10;
+      z.pricePerTree=parseFloat(document.getElementById('pc-pt')?.value)||0;
+    }
   }
   pushToFB();redraw();closeCard();
 };
@@ -1998,7 +2138,8 @@ function renderSidebar(){
   h+=`</table></div>`;
 
   // Irrigation pipe procurement from zone estimates
-  const cropZones=zones.filter(z=>z.type!=='tank'&&z._lateralM!=null);
+  // Existing zones excluded — they already have irrigation
+  const cropZones=zones.filter(z=>z.type==='zone'&&z._lateralM!=null);
   if(cropZones.length>0){
     const totalLat=cropZones.reduce((a,z)=>a+(z._lateralM||0),0);
     const totalSub15=cropZones.filter(z=>(z.subMainDia||'1.5')==='1.5').reduce((a,z)=>a+(z._subMainM||0),0);
@@ -2179,6 +2320,69 @@ window.materializeZonePipes=function(zoneId){
   if(created>0)alert(`Created ${created} sub-main pipe${created>1?'s':''} in the planned layer. Edit them like any other pipe.`);
 };
 window.materializeZonePipes=window.materializeZonePipes;
+
+// ── CSV EXPORT: per-zone multi-year projection ────────────────────────
+window.exportZoneCSV=function(zoneId){
+  const zone=zones.find(z=>z.id===zoneId);
+  if(!zone||(zone.type!=='zone'&&zone.type!=='existing'))return;
+  const years=parseInt(prompt('Project how many years? (5, 10, 15, or 20)','10'))||10;
+  if(years<1||years>50){alert('Please enter a number between 1 and 50');return;}
+
+  const area=polyArea(zone.polygon);
+  const rsp=zone.rowSpacingM||7,tsp=zone.treeSpacingM||7;
+  const trees=zone._treeCount||Math.round(area/(rsp*tsp));
+  const variety=zone.variety||'nabali';
+  const v=OLIVE_VARIETIES[variety];
+  const plantYear=zone.plantYear||(zone.type==='existing'?2007:2026);
+  const startYear=2027;
+  // For existing: use zone.bearingState as 2027's state
+  // For new: first productive year (year 5, ie 2031) is 'up' by convention
+  const initialBearingState=zone.type==='existing'?(zone.bearingState||'up'):'up';
+  const bearingReferenceYear=zone.type==='existing'?startYear:2031;
+
+  const rows=[];
+  rows.push(['Year','Tree Age','Bearing','Water m3/tree','Water m3 total',
+             'Yield kg/tree','Yield kg total','Oil kg/tree','Oil kg total']);
+  for(let i=0;i<years;i++){
+    const yr=startYear+i;
+    const age=yr-plantYear;
+    const bearing=bearingAtYear(bearingReferenceYear, initialBearingState, yr);
+    const wt=treeWaterM3(variety, age);
+    const yt=treeYieldKg(variety, age, bearing);
+    const ot=treeOilKg(variety, age, bearing);
+    rows.push([yr, age, bearing,
+      wt.toFixed(3), (wt*trees).toFixed(1),
+      yt.toFixed(2), (yt*trees).toFixed(1),
+      ot.toFixed(2), (ot*trees).toFixed(1)]);
+  }
+  // Totals row
+  const totWater=rows.slice(1).reduce((a,r)=>a+parseFloat(r[4]),0);
+  const totYield=rows.slice(1).reduce((a,r)=>a+parseFloat(r[6]),0);
+  const totOil=rows.slice(1).reduce((a,r)=>a+parseFloat(r[8]),0);
+  rows.push([]);
+  rows.push(['TOTAL','','','',totWater.toFixed(1),'',totYield.toFixed(1),'',totOil.toFixed(1)]);
+  rows.push([]);
+  rows.push(['Zone:',zone.label]);
+  rows.push(['Type:',zone.type]);
+  rows.push(['Variety:',v.label+' ('+v.type+')']);
+  rows.push(['Plant year:',plantYear]);
+  rows.push(['Trees:',trees]);
+  rows.push(['Area m²:',area.toFixed(0)]);
+  rows.push(['Area dunum:',(area/1000).toFixed(2)]);
+
+  const csv='\uFEFF'+rows.map(r=>r.map(c=>{
+    const s=String(c??'');
+    return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  }).join(',')).join('\r\n');
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`${zone.label.replace(/[^a-z0-9]/gi,'_')}_${years}yr_projection.csv`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+
 let acctItems=[],acctNextId=1;
 
 function acctAutoQty(item){
@@ -2326,7 +2530,8 @@ function renderAcct(){
 
 
   // ── Olive Investment ────────────────────────────────────────────────
-  const cropZones=zones.filter(z=>z.type!=='tank');
+  // Only NEW zones need tree procurement — existing zones already planted
+  const cropZones=zones.filter(z=>z.type==='zone');
   const totalTrees=cropZones.reduce((a,z)=>a+(z._treeCount||0),0);
   let oliveTotal=0;
   h+=`<div class="acct-sec"><div class="acct-sec-h">Olive Investment — per zone</div>
@@ -2376,6 +2581,76 @@ function renderAcct(){
       </div>
     </div>
   </div>`;
+
+  // ── WATER & YIELD SUMMARY (both new + existing zones) ────────────────
+  const cropZones=zones.filter(z=>z.type==='zone'||z.type==='existing');
+  const newZones=zones.filter(z=>z.type==='zone');
+  const exZones=zones.filter(z=>z.type==='existing');
+
+  if(cropZones.length){
+    const yr=2027;
+    const waterRows=cropZones.map(z=>{
+      const a=polyArea(z.polygon);
+      const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
+      const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
+      const wpt=treeWaterM3(z.variety||'nabali',age);
+      return {zone:z, trees, waterPerTree:wpt, totalWater:wpt*trees};
+    });
+    const waterTotal=waterRows.reduce((a,r)=>a+r.totalWater,0);
+    const waterExisting=waterRows.filter(r=>r.zone.type==='existing').reduce((a,r)=>a+r.totalWater,0);
+    const waterNew=waterRows.filter(r=>r.zone.type==='zone').reduce((a,r)=>a+r.totalWater,0);
+
+    const yieldRows=cropZones.map(z=>{
+      const a=polyArea(z.polygon);
+      const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
+      const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
+      const bearing=z.type==='existing'?(z.bearingState||'up'):bearingAtYear(2031,'up',yr);
+      const ypt=treeYieldKg(z.variety||'nabali',age,bearing);
+      const opt=treeOilKg(z.variety||'nabali',age,bearing);
+      return {zone:z, trees, yieldPerTree:ypt, totalYield:ypt*trees, oilPerTree:opt, totalOil:opt*trees, bearing};
+    });
+    const yieldTotal=yieldRows.reduce((a,r)=>a+r.totalYield,0);
+    const oilTotal=yieldRows.reduce((a,r)=>a+r.totalOil,0);
+
+    h+=`<div class="acct-sect" style="border-top:2px solid var(--info);margin-top:10px;padding-top:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:6px">💧 WATER CONSUMPTION — ${yr}</div>`;
+    waterRows.forEach(r=>{
+      h+=`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0">
+        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} (${r.trees}t)</span>
+        <span style="color:var(--info)">${r.totalWater.toFixed(0)} m³</span>
+      </div>`;
+    });
+    h+=`<div style="height:1px;background:var(--bdr);margin:4px 0"></div>
+      ${exZones.length?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0">
+        <span style="color:var(--tx3)">Existing zones total</span>
+        <span style="color:var(--tx2)">${waterExisting.toFixed(0)} m³</span>
+      </div>`:''}
+      ${newZones.length?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0">
+        <span style="color:var(--tx3)">New zones total</span>
+        <span style="color:var(--tx2)">${waterNew.toFixed(0)} m³</span>
+      </div>`:''}
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:4px 0;border-top:1px solid var(--bdr);margin-top:3px">
+        <span>Total water ${yr}</span>
+        <span style="color:var(--info)">${waterTotal.toFixed(0)} m³</span>
+      </div>
+    </div>`;
+
+    h+=`<div class="acct-sect" style="border-top:2px solid var(--ok);margin-top:10px;padding-top:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--ok);margin-bottom:6px">🫒 YIELD PROJECTION — ${yr}</div>`;
+    yieldRows.forEach(r=>{
+      h+=`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0">
+        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} <span style="color:var(--tx3)">(${r.trees}t · ${r.bearing})</span></span>
+        <span style="color:var(--ok)">${r.totalYield.toFixed(0)} kg fruit · ${r.totalOil.toFixed(0)} kg oil</span>
+      </div>`;
+    });
+    h+=`<div style="height:1px;background:var(--bdr);margin:4px 0"></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:4px 0;border-top:1px solid var(--bdr);margin-top:3px">
+        <span>Total ${yr}</span>
+        <span style="color:var(--ok)">${yieldTotal.toFixed(0)} kg fruit · ${oilTotal.toFixed(0)} kg oil</span>
+      </div>
+      <div style="font-size:9px;color:var(--tx3);margin-top:4px">Detailed multi-year projections available via ⬇ Water and ⬇ Yield export buttons.</div>
+    </div>`;
+  }
 
   body.innerHTML=h;
 }
@@ -2519,9 +2794,9 @@ window.exportSummaryCSV=function(){
       item.unit||'pcs',(item.unitPrice||0).toFixed(2),total.toFixed(2));
   });
   csv+=csvRow('');
-  csv+=csvRow('OLIVE INVESTMENT','','Trees','Price/tree (JD)','Zone Total (JD)','');
+  csv+=csvRow('OLIVE INVESTMENT — NEW ZONES ONLY','','Trees','Price/tree (JD)','Zone Total (JD)','');
   let oliveTotal=0;
-  zones.filter(z=>z.type!=='tank').forEach(z=>{
+  zones.filter(z=>z.type==='zone').forEach(z=>{
     const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
     oliveTotal+=cost;
     csv+=csvRow(z.label,'',trees,price.toFixed(2),cost.toFixed(2),'');
@@ -2533,6 +2808,143 @@ window.exportSummaryCSV=function(){
   csv+=csvRow('Olive Investment','','','','',oliveTotal.toFixed(2));
   csv+=csvRow('GRAND TOTAL (JD)','','','','',(matTotal+oliveTotal).toFixed(2));
   dlCSV(csv,`${proj}_summary_${date}.csv`);
+};
+
+// ── WATER CONSUMPTION EXPORT (multi-year, all crop zones) ────────────
+function buildWaterYieldRows(years, includeYield){
+  const cropZones=zones.filter(z=>z.type==='zone'||z.type==='existing');
+  if(!cropZones.length)return null;
+  const startYear=2027;
+  const rows=[];
+  // Header
+  const hdr=['Year'];
+  cropZones.forEach(z=>hdr.push(`${z.label} (${z.type})`));
+  hdr.push('Existing Zones Total','New Zones Total','Grand Total');
+  rows.push(hdr);
+  // Zone metadata row
+  const metaRow=['Variety →'];
+  cropZones.forEach(z=>metaRow.push((OLIVE_VARIETIES[z.variety||'nabali']||{}).label||''));
+  metaRow.push('','','');
+  rows.push(metaRow);
+  const treeRow=['Trees →'];
+  cropZones.forEach(z=>{
+    const a=polyArea(z.polygon);
+    const t=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
+    treeRow.push(t);
+  });
+  treeRow.push('','','');
+  rows.push(treeRow);
+  const plantRow=['Plant year →'];
+  cropZones.forEach(z=>plantRow.push(z.plantYear||(z.type==='existing'?2007:2026)));
+  plantRow.push('','','');
+  rows.push(plantRow);
+  rows.push([]);
+
+  // Data rows
+  for(let i=0;i<years;i++){
+    const yr=startYear+i;
+    const row=[yr];
+    let exTotal=0,nwTotal=0;
+    cropZones.forEach(z=>{
+      const a=polyArea(z.polygon);
+      const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
+      const variety=z.variety||'nabali';
+      const plantYear=z.plantYear||(z.type==='existing'?2007:2026);
+      const age=yr-plantYear;
+      let value;
+      if(includeYield){
+        const initState=z.type==='existing'?(z.bearingState||'up'):'up';
+        const refYear=z.type==='existing'?startYear:2031;
+        const bearing=bearingAtYear(refYear, initState, yr);
+        const per=treeYieldKg(variety, age, bearing);
+        value=per*trees;
+      } else {
+        const per=treeWaterM3(variety, age);
+        value=per*trees;
+      }
+      row.push(value.toFixed(1));
+      if(z.type==='existing')exTotal+=value; else nwTotal+=value;
+    });
+    row.push(exTotal.toFixed(1), nwTotal.toFixed(1), (exTotal+nwTotal).toFixed(1));
+    rows.push(row);
+  }
+  return rows;
+}
+
+window.exportWaterCSV=function(){
+  redraw();
+  const years=parseInt(prompt('Water projection: how many years? (5, 10, 15, 20)','10'))||10;
+  if(years<1||years>50){alert('Please enter 1-50');return;}
+  const rows=buildWaterYieldRows(years, false);
+  if(!rows){alert('No olive zones (new or existing) to export.');return;}
+  const date=new Date().toISOString().slice(0,10),proj=projId||'FarmTwin';
+  const csv=csvRow(`FarmTwin Water Consumption Projection — ${proj} — ${date}`)+
+            csvRow(`All values in m³/year — ${years}-year projection`)+
+            csvRow('')+
+            rows.map(r=>csvRow(...r)).join('');
+  dlCSV(csv,`${proj}_water_${years}yr_${date}.csv`);
+};
+
+window.exportYieldCSV=function(){
+  redraw();
+  const years=parseInt(prompt('Yield projection: how many years? (5, 10, 15, 20)','10'))||10;
+  if(years<1||years>50){alert('Please enter 1-50');return;}
+  const rows=buildWaterYieldRows(years, true);
+  if(!rows){alert('No olive zones (new or existing) to export.');return;}
+  const date=new Date().toISOString().slice(0,10),proj=projId||'FarmTwin';
+  const csv=csvRow(`FarmTwin Yield Projection — ${proj} — ${date}`)+
+            csvRow(`Fruit yield in kg/year — includes alternate bearing — ${years}-year projection`)+
+            csvRow('')+
+            rows.map(r=>csvRow(...r)).join('');
+  dlCSV(csv,`${proj}_yield_${years}yr_${date}.csv`);
+};
+
+window.exportCombinedCSV=function(){
+  redraw();
+  const years=parseInt(prompt('Combined projection: how many years? (5, 10, 15, 20)','10'))||10;
+  if(years<1||years>50){alert('Please enter 1-50');return;}
+  const date=new Date().toISOString().slice(0,10),proj=projId||'FarmTwin';
+  const fmtM=v=>v>999?`${(v/1000).toFixed(2)}km`:`${v.toFixed(0)}m`;
+
+  let csv=csvRow(`FarmTwin Combined Report — ${proj} — ${date}`);
+  csv+=csvRow(`${years}-year projection`);
+  csv+=csvRow('');
+
+  // 1. Expenses section
+  csv+=csvRow('═══ MATERIALS & EXPENSES ═══');
+  csv+=csvRow('Item','','Qty','Unit','Unit Price (JD)','Total (JD)');
+  acctItems.forEach(item=>{
+    const qty=acctAutoQty(item),total=qty*(item.unitPrice||0);
+    csv+=csvRow(item.label+(item.autoKey?' [AUTO]':''),'',qty.toFixed(0),
+      item.unit||'pcs',(item.unitPrice||0).toFixed(2),total.toFixed(2));
+  });
+  const matTotal=acctItems.reduce((a,i)=>a+acctLineTotal(i),0);
+  csv+=csvRow('','','','','Materials Total',matTotal.toFixed(2));
+  csv+=csvRow('');
+  csv+=csvRow('OLIVE TREE INVESTMENT (NEW ZONES)');
+  csv+=csvRow('Zone','','Trees','Price/tree (JD)','Total (JD)','');
+  let oliveTotal=0;
+  zones.filter(z=>z.type==='zone').forEach(z=>{
+    const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
+    oliveTotal+=cost;
+    csv+=csvRow(z.label,'',trees,price.toFixed(2),cost.toFixed(2),'');
+  });
+  csv+=csvRow('','','','','Olive Total',oliveTotal.toFixed(2));
+  csv+=csvRow('','','','','GRAND EXPENSE TOTAL',(matTotal+oliveTotal).toFixed(2));
+  csv+=csvRow('');csv+=csvRow('');
+
+  // 2. Water section
+  csv+=csvRow('═══ WATER CONSUMPTION (m³/year) ═══');
+  const waterRows=buildWaterYieldRows(years, false);
+  if(waterRows) csv+=waterRows.map(r=>csvRow(...r)).join('');
+  csv+=csvRow('');csv+=csvRow('');
+
+  // 3. Yield section
+  csv+=csvRow('═══ FRUIT YIELD (kg/year) ═══');
+  const yieldRows=buildWaterYieldRows(years, true);
+  if(yieldRows) csv+=yieldRows.map(r=>csvRow(...r)).join('');
+
+  dlCSV(csv,`${proj}_combined_${years}yr_${date}.csv`);
 };
 
 // ── AI ASSISTANT ──────────────────────────────────────────────────────
