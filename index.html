@@ -2531,13 +2531,13 @@ function renderAcct(){
 
   // ── Olive Investment ────────────────────────────────────────────────
   // Only NEW zones need tree procurement — existing zones already planted
-  const cropZones=zones.filter(z=>z.type==='zone');
-  const totalTrees=cropZones.reduce((a,z)=>a+(z._treeCount||0),0);
+  const investZones=zones.filter(z=>z.type==='zone');
+  const totalTrees=investZones.reduce((a,z)=>a+(z._treeCount||0),0);
   let oliveTotal=0;
   h+=`<div class="acct-sec"><div class="acct-sec-h">Olive Investment — per zone</div>
   <table class="acct-table">
   <tr><th>Zone</th><th class="acct-num">Trees</th><th class="acct-num">Price/tree (JD)</th><th class="acct-num">Zone total (JD)</th></tr>`;
-  cropZones.forEach(z=>{
+  investZones.forEach(z=>{
     const trees=z._treeCount||0,price=z.pricePerTree||0,cost=trees*price;
     oliveTotal+=cost;
     h+=`<tr>
@@ -2547,7 +2547,7 @@ function renderAcct(){
       <td class="acct-num" style="color:${cost>0?'var(--ok)':'var(--tx3)'};font-weight:600">${cost>0?fmtJD(cost):'—'}</td>
     </tr>`;
   });
-  if(!cropZones.length)h+=`<tr><td colspan="4" style="color:var(--tx3);padding:8px 6px;font-size:11px">No crop zones drawn yet</td></tr>`;
+  if(!investZones.length)h+=`<tr><td colspan="4" style="color:var(--tx3);padding:8px 6px;font-size:11px">No crop zones drawn yet</td></tr>`;
   // Olive subtotal row
   h+=`<tr style="border-top:2px solid var(--bdr2);background:var(--sur2)">
     <td style="padding:5px 6px;font-weight:700">Total</td>
@@ -2583,13 +2583,13 @@ function renderAcct(){
   </div>`;
 
   // ── WATER & YIELD SUMMARY (both new + existing zones) ────────────────
-  const cropZones=zones.filter(z=>z.type==='zone'||z.type==='existing');
+  const allCropZones=zones.filter(z=>z.type==='zone'||z.type==='existing');
   const newZones=zones.filter(z=>z.type==='zone');
   const exZones=zones.filter(z=>z.type==='existing');
 
-  if(cropZones.length){
+  if(allCropZones.length){
     const yr=2027;
-    const waterRows=cropZones.map(z=>{
+    const waterRows=allCropZones.map(z=>{
       const a=polyArea(z.polygon);
       const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
       const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
@@ -2600,7 +2600,7 @@ function renderAcct(){
     const waterExisting=waterRows.filter(r=>r.zone.type==='existing').reduce((a,r)=>a+r.totalWater,0);
     const waterNew=waterRows.filter(r=>r.zone.type==='zone').reduce((a,r)=>a+r.totalWater,0);
 
-    const yieldRows=cropZones.map(z=>{
+    const yieldRows=allCropZones.map(z=>{
       const a=polyArea(z.polygon);
       const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
       const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
