@@ -54,18 +54,28 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
 .hidden{display:none!important}
 
 /* hud — vertical panel on left edge */
-#hud{position:fixed;top:56px;left:10px;bottom:12px;width:78px;background:var(--sur);
+#hud{position:fixed;top:56px;left:8px;bottom:12px;width:68px;background:var(--sur);
   border:1px solid var(--bdr);border-radius:10px;
-  display:flex;flex-direction:column;align-items:center;padding:8px 4px;gap:6px;
-  z-index:600;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+  display:flex;flex-direction:column;align-items:center;padding:6px 3px;gap:5px;
+  z-index:600;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.3);
+  transition:transform .2s,opacity .2s}
+#hud.collapsed{transform:translateX(-64px);opacity:.4}
+#hud.collapsed:hover{transform:translateX(0);opacity:1}
+#hud-toggle{position:fixed;top:56px;left:78px;width:18px;height:28px;
+  background:var(--sur);border:1px solid var(--bdr);border-left:none;
+  border-radius:0 4px 4px 0;cursor:pointer;z-index:601;
+  display:flex;align-items:center;justify-content:center;color:var(--tx3);
+  font-size:11px;padding:0;transition:left .2s}
+#hud-toggle:hover{color:var(--tx)}
+#hud.collapsed + #hud-toggle{left:8px}
 .hgrp{display:flex;flex-direction:column;gap:3px;align-items:center;flex-shrink:0;width:100%}
 .hsep{width:70%;height:1px;background:var(--bdr);margin:3px 0}
-.tool{width:60px;height:44px;padding:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:1px;font-size:17px}
-.tool .lbl{font-size:8px;font-weight:700;letter-spacing:.04em}
-.pill{height:24px;padding:0 8px;border-radius:12px;border:1.5px solid var(--bdr2);
-  background:var(--sur2);color:var(--tx);font-size:10px;cursor:pointer;font-family:inherit;
-  min-width:60px;text-align:center}
+.tool{width:52px;height:40px;padding:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1px;font-size:15px}
+.tool .lbl{font-size:7px;font-weight:700;letter-spacing:.04em}
+.pill{height:22px;padding:0 6px;border-radius:11px;border:1.5px solid var(--bdr2);
+  background:var(--sur2);color:var(--tx);font-size:9px;cursor:pointer;font-family:inherit;
+  min-width:52px;text-align:center}
 .pill.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
 .pill.ex.on{border-color:var(--ok);background:#0d2c1a;color:var(--ok)}
 .pill.pl.on{border-color:var(--info);background:#1c2d45;color:var(--info)}
@@ -277,6 +287,7 @@ button,input,select{font-family:inherit}
     <button class="btn" id="del-btn" onclick="deleteSelected()">🗑 Delete</button>
   </div>
 </div>
+<button id="hud-toggle" onclick="const h=document.getElementById('hud');h.classList.toggle('collapsed');this.textContent=h.classList.contains('collapsed')?'▶':'◀';" title="Show/hide tools">◀</button>
 
 </div>
 
