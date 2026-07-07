@@ -394,69 +394,144 @@ const PAR_DIST=50;       // metres for parallel detection
 const ZONE_COLS=['#4ade80','#60a5fa','#fb923c','#f472b6','#a78bfa','#34d399','#fbbf24'];
 const EXISTING_ZONE_COL='#84a173';
 
-// ── OLIVE VARIETY DATA ─────────────────────────────────────────────────
-// Water: L/tree/year at maturity (mature = 8+ years old)
-// Yield: kg fruit/tree/year at maturity (UP year); DOWN year = 0.5x
-// Oil %: oil weight / fruit weight
+// ── OLIVE VARIETY DATA (research-backed, Mafraq semi-arid conditions) ──
+// Values based on: Jordan Univ of Science & Tech (Nabali/Grossa), Mafraq deficit
+// irrigation studies (Nabali Baladi/Muhassan), Italian SHD trials (Arbequina,
+// Koroneiki, Arbosana, Frantoio), Spanish Picual production data.
+//
+// Fields:
+//   waterM3         — mature annual water requirement (m³/tree/year)
+//   waterYoungM3    — annual water for 1-year-old newly planted tree (m³/tree/year)
+//                     — even young trees need water (1-2 m³) to establish
+//   yieldUpKg       — mature UP-year fruit yield (kg/tree)
+//   downRatio       — DOWN-year fruit yield as fraction of UP-year (0.2-0.8 by variety)
+//   oilPct          — oil weight / fruit weight (%)
+//   type            — Oil / Table / Dual
+//   note            — brief field note
 const OLIVE_VARIETIES = {
-  'nabali':          {label:'Nabali',          waterL:2500, yieldKg:40, oilPct:20, type:'Dual'},
-  'nabali_muhassan': {label:'Nabali Muhassan', waterL:2500, yieldKg:45, oilPct:22, type:'Dual'},
-  'grossane':        {label:'Grossane',        waterL:2800, yieldKg:35, oilPct:20, type:'Table'},
-  'coratina':        {label:'Coratina',        waterL:2200, yieldKg:30, oilPct:25, type:'Oil'},
-  'picual':          {label:'Picual',          waterL:2400, yieldKg:35, oilPct:24, type:'Oil'},
-  'arbequina':       {label:'Arbequina',       waterL:2000, yieldKg:25, oilPct:20, type:'Oil'},
-  'koroneiki':       {label:'Koroneiki',       waterL:1800, yieldKg:20, oilPct:22, type:'Oil'},
-  'frantoio':        {label:'Frantoio',        waterL:2400, yieldKg:30, oilPct:22, type:'Oil'},
+  'nabali': {
+    label:'Nabali (Baladi)', type:'Dual',
+    waterM3: 5.5,  waterYoungM3: 1.0,
+    yieldUpKg: 50, downRatio: 0.30,   // strongly biennial in Jordan
+    oilPct: 20,
+    note:'Local Jordanian variety; strongly alternate-bearing without irrigation'
+  },
+  'nabali_muhassan': {
+    label:'Nabali Muhassan', type:'Dual',
+    waterM3: 5.0,  waterYoungM3: 1.0,
+    yieldUpKg: 55, downRatio: 0.35,
+    oilPct: 22,
+    note:'Improved selection; better yield, slightly less alternate-bearing than Nabali'
+  },
+  'grossane': {
+    label:'Grossane', type:'Table',
+    waterM3: 6.0,  waterYoungM3: 1.2,
+    yieldUpKg: 40, downRatio: 0.45,
+    oilPct: 18,
+    note:'French table variety; large fruits, higher water demand'
+  },
+  'coratina': {
+    label:'Coratina', type:'Oil',
+    waterM3: 4.5,  waterYoungM3: 1.0,
+    yieldUpKg: 25, downRatio: 0.55,
+    oilPct: 25,
+    note:'Italian oil variety; high oil quality, moderate yield'
+  },
+  'picual': {
+    label:'Picual', type:'Oil',
+    waterM3: 5.0,  waterYoungM3: 1.0,
+    yieldUpKg: 40, downRatio: 0.45,
+    oilPct: 24,
+    note:'Spanish oil variety; heavy producer, standard spacing'
+  },
+  'arbequina': {
+    label:'Arbequina', type:'Oil',
+    waterM3: 3.0,  waterYoungM3: 0.8,
+    yieldUpKg: 12, downRatio: 0.75,    // SHD: alternate bearing much reduced by irrigation
+    oilPct: 20,
+    note:'Spanish SHD variety; small fruits, high density (1000-1600 trees/ha)'
+  },
+  'koroneiki': {
+    label:'Koroneiki', type:'Oil',
+    waterM3: 2.8,  waterYoungM3: 0.7,
+    yieldUpKg: 10, downRatio: 0.70,
+    oilPct: 22,
+    note:'Greek SHD variety; drought-resistant, small fruits, high polyphenols'
+  },
+  'frantoio': {
+    label:'Frantoio', type:'Oil',
+    waterM3: 4.8,  waterYoungM3: 1.0,
+    yieldUpKg: 30, downRatio: 0.50,
+    oilPct: 22,
+    note:'Italian oil variety; balanced yield and quality'
+  },
 };
 
-// Age scaling: multiplier for water/yield based on tree age
-// Year 1-2: 10% (irrigation only, no yield)
-// Year 3-4: 30%
-// Year 5-6: 60%
-// Year 7: 85%
-// Year 8+: 100%
-function ageFactor(age){
-  if(age<=0)return 0;
-  if(age<=2)return 0.10;
-  if(age<=4)return 0.30;
-  if(age<=6)return 0.60;
-  if(age<=7)return 0.85;
+// Age-scaling curves per age (returns 0-1 multiplier)
+// Young trees still need water even in year 1, but yield is 0 for years 1-3.
+// Water ramps from waterYoungM3 (year 1) to waterM3 (year 8+).
+function ageWaterFactor(age){
+  if(age<=0) return 0;
+  if(age===1) return 0;    // ratio applied to waterYoungM3 directly
+  if(age===2) return 0.05; // small increment
+  if(age===3) return 0.20;
+  if(age===4) return 0.40;
+  if(age===5) return 0.65;
+  if(age===6) return 0.85;
+  if(age===7) return 0.95;
+  return 1.0;  // 8+
+}
+// Yield age factor: no yield years 1-3; ramps up 4-8; full 8+
+function ageYieldFactor(age){
+  if(age<=3) return 0;
+  if(age===4) return 0.10;    // first significant yield
+  if(age===5) return 0.30;
+  if(age===6) return 0.55;
+  if(age===7) return 0.80;
   return 1.0;
 }
-// Yield factor uses same scaling but zero for years 1-2 (no yield)
-function yieldAgeFactor(age){
-  if(age<=2)return 0;
-  return ageFactor(age);
-}
 
-// Compute per-tree water (m³/year) for a given variety at a given age
+// Compute per-tree water in m³/year for a variety at a given age
 function treeWaterM3(variety, age){
-  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
-  return (v.waterL*ageFactor(age))/1000;
+  const v=OLIVE_VARIETIES[variety]; if(!v) return 0;
+  if(age<=0) return 0;
+  if(age===1) return v.waterYoungM3;
+  const factor=ageWaterFactor(age);
+  // Interpolate between waterYoungM3 (age 1) and waterM3 (age 8+)
+  return v.waterYoungM3 + (v.waterM3 - v.waterYoungM3) * factor;
 }
 
-// Compute per-tree yield (kg/year) at variety, age, and bearing state
-// bearingState: 'up' or 'down'
-function treeYieldKg(variety, age, bearingState){
-  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
-  const factor=yieldAgeFactor(age)*(bearingState==='up'?1.0:0.5);
-  return v.yieldKg*factor;
+// Compute per-tree fruit yield in kg/year (with variety-specific alternate bearing)
+// healthFactor: 0-1, defaults to 1 (used mostly for existing zones in bad shape)
+function treeYieldKg(variety, age, bearingState, healthFactor){
+  const v=OLIVE_VARIETIES[variety]; if(!v) return 0;
+  const hf = (typeof healthFactor === 'number') ? healthFactor : 1.0;
+  const bearingFactor = bearingState==='up' ? 1.0 : v.downRatio;
+  return v.yieldUpKg * ageYieldFactor(age) * bearingFactor * hf;
 }
 
-// Compute per-tree oil yield (kg/year)
-function treeOilKg(variety, age, bearingState){
-  const v=OLIVE_VARIETIES[variety];if(!v)return 0;
-  return treeYieldKg(variety, age, bearingState) * (v.oilPct/100);
+// Compute per-tree oil yield in kg/year
+function treeOilKg(variety, age, bearingState, healthFactor){
+  const v=OLIVE_VARIETIES[variety]; if(!v) return 0;
+  return treeYieldKg(variety, age, bearingState, healthFactor) * (v.oilPct/100);
 }
 
-// Get the bearing state for a given year, given the initial state.
-// Alternate bearing: state flips each year.
+// Apply system losses to a base water figure.
+// lossPct 0-50 → returns water needed at source to deliver `baseM3` at the tree.
+// Formula: source = base / (1 - lossPct/100). So 10% losses means source is 11.1% higher.
+function waterWithLosses(baseM3, lossPct){
+  const loss = Math.max(0, Math.min(50, lossPct||0)) / 100;
+  if(loss >= 1) return baseM3;
+  return baseM3 / (1 - loss);
+}
+
+// Alternate bearing: state flips each year
 function bearingAtYear(startYear, startState, targetYear){
   const flip=(targetYear-startYear)%2;
   return flip===0 ? startState : (startState==='up'?'down':'up');
 }
 
-// Get age of trees in zone at a given year
+// Age of trees in a zone at a given year
 function zoneAgeAtYear(zone, year){
   const py=zone.plantYear||(zone.type==='existing'?2007:2026);
   return year-py;
@@ -901,6 +976,13 @@ function drawTreeGrid(svg,zone,pxPts,col){
   const isFlat=slopePct<2;
 
   // ── Grid and layout computation ───────────────────────────────────────
+  // Always compute a lightweight tree count estimate from area / spacing.
+  // This ensures the count updates when spacing changes even at extreme zoom
+  // levels where the full grid isn't drawn.
+  const areaM2Zone=polyArea(zone.polygon);
+  const spacingProduct=zone.rowSpacingM*zone.treeSpacingM;
+  zone._treeCount=spacingProduct>0?Math.round(areaM2Zone/spacingProduct):0;
+
   // Always computed — used for stored values even when skipGrid
   let dotCount=zone._treeCount||0;
   let totalLateralPx=0,minRowProj=Infinity,maxRowProj=-Infinity;
@@ -1684,8 +1766,8 @@ function finishZone(){
     type: isTank?'tank' : (isExisting?'existing':'zone'),
     // Type-specific defaults:
     ...(isTank?{wallType:'vertical',fillPct:50,waterLevel:1.5,maxDepth:3,maxFlowM3h:5,soilAngle:45}:{}),
-    ...(isExisting?{plantYear:2007, bearingState:'up'}:{}),  // existing default: 20 years old in 2027
-    ...(!isTank && !isExisting?{emitters:1,lhrPerEmitter:10,pricePerTree:0,subMainDia:'1.5',plantYear:2026}:{})};
+    ...(isExisting?{plantYear:2007, bearingState:'up', healthFactor:1.0, lossPct:20}:{}),
+    ...(!isTank && !isExisting?{emitters:1,lhrPerEmitter:10,pricePerTree:0,subMainDia:'1.5',plantYear:2026,lossPct:10}:{})};
   zones.push(zone);cancelDraw();selZone=zone;
   pushToFB();redraw();showZoneCard(zone);
 }
@@ -1972,20 +2054,26 @@ function showZoneCard(zone){
     const variety=zone.variety||'nabali';
     const bearing=isExisting?(zone.bearingState||'up'):
                   bearingAtYear(2027, 'up', currentYear); // new zones: first productive year is up
+    const healthFactor=isExisting?(zone.healthFactor??1.0):1.0;
     const waterPerTree=treeWaterM3(variety, age);
-    const yieldPerTree=treeYieldKg(variety, age, bearing);
-    const oilPerTree=treeOilKg(variety, age, bearing);
+    const yieldPerTree=treeYieldKg(variety, age, bearing, healthFactor);
+    const oilPerTree=treeOilKg(variety, age, bearing, healthFactor);
     const totalWater=waterPerTree*trees;
     const totalYield=yieldPerTree*trees;
     const totalOil=oilPerTree*trees;
+    const lossPct=zone.lossPct??(isExisting?20:10);
+    const waterWithLoss=waterWithLosses(totalWater, lossPct);
+    const varietyInfo=OLIVE_VARIETIES[variety];
     waterYieldHtml=`<div class="pc-sect" style="border-top:1px solid var(--bdr);margin-top:8px;padding-top:8px">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--tx3);margin-bottom:5px">${currentYear} Estimates</div>
       <div style="font-size:11px;line-height:1.6">
-        Tree age: <b>${age} years</b> · Bearing: <b style="color:${bearing==='up'?'var(--ok)':'var(--warn)'}">${bearing.toUpperCase()}</b><br>
-        Water/tree: <b>${waterPerTree.toFixed(2)}m³/yr</b> · Zone total: <b style="color:var(--info)">${totalWater.toFixed(0)}m³/yr</b><br>
+        Tree age: <b>${age} years</b> · Bearing: <b style="color:${bearing==='up'?'var(--ok)':'var(--warn)'}">${bearing.toUpperCase()}</b>${isExisting?` · Health: <b style="color:var(--ok)">${Math.round(healthFactor*100)}%</b>`:''}<br>
+        Water/tree: <b>${waterPerTree.toFixed(2)}m³/yr</b> · Zone used: <b style="color:var(--info)">${totalWater.toFixed(0)}m³/yr</b><br>
+        <span style="color:var(--tx3)">↳ At source (+${lossPct}% losses):</span> <b style="color:var(--warn)">${waterWithLoss.toFixed(0)}m³/yr</b><br>
         Yield/tree: <b>${yieldPerTree.toFixed(1)}kg</b> · Zone total: <b style="color:var(--ok)">${totalYield.toFixed(0)}kg</b><br>
-        Oil/tree: <b>${oilPerTree.toFixed(1)}kg</b> · Zone total: <b style="color:#facc15">${totalOil.toFixed(0)}kg</b>
+        Oil/tree: <b>${oilPerTree.toFixed(2)}kg</b> · Zone total: <b style="color:#facc15">${totalOil.toFixed(1)}kg</b>
       </div>
+      ${varietyInfo?`<div style="font-size:9px;color:var(--tx3);margin-top:4px;font-style:italic">${varietyInfo.note}</div>`:''}
     </div>`;
   }
 
@@ -2018,7 +2106,13 @@ function showZoneCard(zone){
       <select id="pc-bs">
         <option value="up"${(zone.bearingState||'up')==='up'?' selected':''}>UP year (heavy yield)</option>
         <option value="down"${zone.bearingState==='down'?' selected':''}>DOWN year (light yield)</option>
-      </select></div>`:''}
+      </select></div>
+    <div class="pc-r"><label>Tree health<br><span style="color:var(--tx3);font-size:9px">0=dying, 1=perfect</span></label>
+      <div style="flex:1;display:flex;align-items:center;gap:6px">
+        <input id="pc-hf" type="range" min="0" max="100" value="${Math.round((zone.healthFactor??1.0)*100)}" style="flex:1;accent-color:var(--ok)">
+        <span id="pc-hf-val" style="font-size:11px;color:var(--ok);width:32px;text-align:right">${Math.round((zone.healthFactor??1.0)*100)}%</span>
+      </div>
+    </div>`:''}
     <div class="pc-r"><label>Row direction</label>
     <select id="pc-ra">
       <option value="0"${(zone.rowAngleDeg??15)===0?' selected':''}>0° — rows run N-S</option>
@@ -2038,6 +2132,12 @@ function showZoneCard(zone){
     </select></div>`:''}
     <div class="pc-r"><label>Row spacing (m)<br><span style="color:var(--tx3);font-size:9px">row-to-row</span></label><input id="pc-rs" type="number" value="${zone.rowSpacingM||7}" min="1" step="0.5"></div>
     <div class="pc-r"><label>Tree spacing (m)<br><span style="color:var(--tx3);font-size:9px">within row</span></label><input id="pc-ts" type="number" value="${zone.treeSpacingM||7}" min="1" step="0.5"></div>
+    <div class="pc-r"><label>System loss %<br><span style="color:var(--tx3);font-size:9px">evap + leaks</span></label>
+      <div style="flex:1;display:flex;align-items:center;gap:6px">
+        <input id="pc-lp" type="range" min="0" max="50" value="${zone.lossPct??(isExisting?20:10)}" style="flex:1;accent-color:var(--warn)">
+        <span id="pc-lp-val" style="font-size:11px;color:var(--warn);width:32px;text-align:right">${zone.lossPct??(isExisting?20:10)}%</span>
+      </div>
+    </div>
     ${!isExisting?`<div class="pc-r"><label>Emitters/tree</label><input id="pc-em" type="number" value="${zone.emitters||1}" min="1" max="8"></div>
     <div class="pc-r"><label>L/hr per emitter</label><input id="pc-lr" type="number" value="${zone.lhrPerEmitter||10}" min="1"></div>
     <div class="pc-r"><label>Price/tree (JD)</label><input id="pc-pt" type="number" value="${zone.pricePerTree||0}" min="0" step="0.5" placeholder="0"></div>`:''}
@@ -2064,10 +2164,19 @@ function showZoneCard(zone){
       </div>
     </div>`:''}`;
   // live update tree calc and wall type toggle
-  const inputIds=['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt','pc-var','pc-py','pc-bs'];
+  const inputIds=['pc-ra','pc-smd','pc-rs','pc-ts','pc-em','pc-lr','pc-pt','pc-var','pc-py','pc-bs','pc-hf','pc-lp'];
   inputIds.forEach(id=>{
     document.getElementById(id)?.addEventListener('change',refreshZoneCalc);
     document.getElementById(id)?.addEventListener('input',refreshZoneCalc);
+  });
+  // Live update health % label as slider moves (before the debounce fires)
+  document.getElementById('pc-hf')?.addEventListener('input',e=>{
+    const v=document.getElementById('pc-hf-val');
+    if(v) v.textContent=e.target.value+'%';
+  });
+  document.getElementById('pc-lp')?.addEventListener('input',e=>{
+    const v=document.getElementById('pc-lp-val');
+    if(v) v.textContent=e.target.value+'%';
   });
   let _rzTimer=null;
   function refreshZoneCalc(){
@@ -2081,6 +2190,8 @@ function showZoneCard(zone){
     if(document.getElementById('pc-var'))zone.variety=document.getElementById('pc-var')?.value||'nabali';
     if(document.getElementById('pc-py'))zone.plantYear=parseInt(document.getElementById('pc-py')?.value)||2026;
     if(document.getElementById('pc-bs'))zone.bearingState=document.getElementById('pc-bs')?.value||'up';
+    if(document.getElementById('pc-hf'))zone.healthFactor=parseInt(document.getElementById('pc-hf')?.value)/100;
+    if(document.getElementById('pc-lp'))zone.lossPct=parseInt(document.getElementById('pc-lp')?.value);
     clearTimeout(_rzTimer);
     _rzTimer=setTimeout(()=>{
       redraw();
@@ -2151,9 +2262,11 @@ window.applyZone=function(id){
     z.treeSpacingM=parseFloat(document.getElementById('pc-ts')?.value)||7;
     z.variety=document.getElementById('pc-var')?.value||'nabali';
     z.plantYear=parseInt(document.getElementById('pc-py')?.value)||(z.type==='existing'?2007:2026);
+    z.lossPct=parseInt(document.getElementById('pc-lp')?.value??(z.type==='existing'?20:10));
     // Existing-only
     if(z.type==='existing'){
       z.bearingState=document.getElementById('pc-bs')?.value||'up';
+      z.healthFactor=parseInt(document.getElementById('pc-hf')?.value??100)/100;
     }
     // New-zone-only (has pipes)
     if(z.type==='zone'){
@@ -2436,34 +2549,43 @@ window.exportZoneCSV=function(zoneId){
   // For new: first productive year (year 5, ie 2031) is 'up' by convention
   const initialBearingState=zone.type==='existing'?(zone.bearingState||'up'):'up';
   const bearingReferenceYear=zone.type==='existing'?startYear:2031;
+  const healthFactor=zone.type==='existing'?(zone.healthFactor??1.0):1.0;
 
   const rows=[];
-  rows.push(['Year','Tree Age','Bearing','Water m3/tree','Water m3 total',
+  const lossPct=zone.lossPct??(zone.type==='existing'?20:10);
+  rows.push(['Year','Tree Age','Bearing','Water m3/tree','Water used m3','Water at source m3',
              'Yield kg/tree','Yield kg total','Oil kg/tree','Oil kg total']);
   for(let i=0;i<years;i++){
     const yr=startYear+i;
     const age=yr-plantYear;
     const bearing=bearingAtYear(bearingReferenceYear, initialBearingState, yr);
     const wt=treeWaterM3(variety, age);
-    const yt=treeYieldKg(variety, age, bearing);
-    const ot=treeOilKg(variety, age, bearing);
+    const usedTotal=wt*trees;
+    const sourceTotal=waterWithLosses(usedTotal, lossPct);
+    const yt=treeYieldKg(variety, age, bearing, healthFactor);
+    const ot=treeOilKg(variety, age, bearing, healthFactor);
     rows.push([yr, age, bearing,
-      wt.toFixed(3), (wt*trees).toFixed(1),
+      wt.toFixed(3), usedTotal.toFixed(1), sourceTotal.toFixed(1),
       yt.toFixed(2), (yt*trees).toFixed(1),
       ot.toFixed(2), (ot*trees).toFixed(1)]);
   }
   // Totals row
   const totWater=rows.slice(1).reduce((a,r)=>a+parseFloat(r[4]),0);
-  const totYield=rows.slice(1).reduce((a,r)=>a+parseFloat(r[6]),0);
-  const totOil=rows.slice(1).reduce((a,r)=>a+parseFloat(r[8]),0);
+  const totWaterSource=rows.slice(1).reduce((a,r)=>a+parseFloat(r[5]),0);
+  const totYield=rows.slice(1).reduce((a,r)=>a+parseFloat(r[7]),0);
+  const totOil=rows.slice(1).reduce((a,r)=>a+parseFloat(r[9]),0);
   rows.push([]);
-  rows.push(['TOTAL','','','',totWater.toFixed(1),'',totYield.toFixed(1),'',totOil.toFixed(1)]);
+  rows.push(['TOTAL','','','',totWater.toFixed(1),totWaterSource.toFixed(1),'',totYield.toFixed(1),'',totOil.toFixed(1)]);
   rows.push([]);
   rows.push(['Zone:',zone.label]);
   rows.push(['Type:',zone.type]);
   rows.push(['Variety:',v.label+' ('+v.type+')']);
   rows.push(['Plant year:',plantYear]);
   rows.push(['Trees:',trees]);
+  rows.push(['System loss %:',lossPct+'%']);
+  if(zone.type==='existing'){
+    rows.push(['Health factor:',(healthFactor*100).toFixed(0)+'%']);
+  }
   rows.push(['Area m²:',area.toFixed(0)]);
   rows.push(['Area dunum:',(area/1000).toFixed(2)]);
 
@@ -2691,52 +2813,64 @@ function renderAcct(){
       const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
       const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
       const wpt=treeWaterM3(z.variety||'nabali',age);
-      return {zone:z, trees, waterPerTree:wpt, totalWater:wpt*trees};
+      const totalWater=wpt*trees;
+      const lossPct=z.lossPct??(z.type==='existing'?20:10);
+      const waterAtSource=waterWithLosses(totalWater, lossPct);
+      return {zone:z, trees, waterPerTree:wpt, totalWater, waterAtSource, lossPct};
     });
     const waterTotal=waterRows.reduce((a,r)=>a+r.totalWater,0);
+    const waterSourceTotal=waterRows.reduce((a,r)=>a+r.waterAtSource,0);
     const waterExisting=waterRows.filter(r=>r.zone.type==='existing').reduce((a,r)=>a+r.totalWater,0);
+    const waterExistingSource=waterRows.filter(r=>r.zone.type==='existing').reduce((a,r)=>a+r.waterAtSource,0);
     const waterNew=waterRows.filter(r=>r.zone.type==='zone').reduce((a,r)=>a+r.totalWater,0);
+    const waterNewSource=waterRows.filter(r=>r.zone.type==='zone').reduce((a,r)=>a+r.waterAtSource,0);
 
     const yieldRows=allCropZones.map(z=>{
       const a=polyArea(z.polygon);
       const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
       const age=yr-(z.plantYear||(z.type==='existing'?2007:2026));
       const bearing=z.type==='existing'?(z.bearingState||'up'):bearingAtYear(2031,'up',yr);
-      const ypt=treeYieldKg(z.variety||'nabali',age,bearing);
-      const opt=treeOilKg(z.variety||'nabali',age,bearing);
-      return {zone:z, trees, yieldPerTree:ypt, totalYield:ypt*trees, oilPerTree:opt, totalOil:opt*trees, bearing};
+      const health=z.type==='existing'?(z.healthFactor??1.0):1.0;
+      const ypt=treeYieldKg(z.variety||'nabali',age,bearing,health);
+      const opt=treeOilKg(z.variety||'nabali',age,bearing,health);
+      return {zone:z, trees, yieldPerTree:ypt, totalYield:ypt*trees, oilPerTree:opt, totalOil:opt*trees, bearing, health};
     });
     const yieldTotal=yieldRows.reduce((a,r)=>a+r.totalYield,0);
     const oilTotal=yieldRows.reduce((a,r)=>a+r.totalOil,0);
 
     h+=`<div class="acct-sect" style="border-top:2px solid var(--info);margin-top:10px;padding-top:8px">
-      <div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:6px">💧 WATER CONSUMPTION — ${yr}</div>`;
+      <div style="font-size:11px;font-weight:700;color:var(--info);margin-bottom:6px">💧 WATER CONSUMPTION — ${yr}</div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--tx3);padding:2px 0;border-bottom:1px solid var(--bdr);margin-bottom:3px">
+        <span>Zone (trees)</span>
+        <span>Used m³ · At source m³</span>
+      </div>`;
     waterRows.forEach(r=>{
       h+=`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0">
-        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} (${r.trees}t)</span>
-        <span style="color:var(--info)">${r.totalWater.toFixed(0)} m³</span>
+        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} (${r.trees}t · -${r.lossPct}%)</span>
+        <span style="color:var(--info)">${r.totalWater.toFixed(0)} · <b style="color:var(--warn)">${r.waterAtSource.toFixed(0)}</b></span>
       </div>`;
     });
     h+=`<div style="height:1px;background:var(--bdr);margin:4px 0"></div>
       ${exZones.length?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0">
-        <span style="color:var(--tx3)">Existing zones total</span>
-        <span style="color:var(--tx2)">${waterExisting.toFixed(0)} m³</span>
+        <span style="color:var(--tx3)">Existing zones</span>
+        <span style="color:var(--tx2)">${waterExisting.toFixed(0)} · <b style="color:var(--warn)">${waterExistingSource.toFixed(0)}</b> m³</span>
       </div>`:''}
       ${newZones.length?`<div style="display:flex;justify-content:space-between;font-size:10px;padding:1px 0">
-        <span style="color:var(--tx3)">New zones total</span>
-        <span style="color:var(--tx2)">${waterNew.toFixed(0)} m³</span>
+        <span style="color:var(--tx3)">New zones</span>
+        <span style="color:var(--tx2)">${waterNew.toFixed(0)} · <b style="color:var(--warn)">${waterNewSource.toFixed(0)}</b> m³</span>
       </div>`:''}
       <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;padding:4px 0;border-top:1px solid var(--bdr);margin-top:3px">
         <span>Total water ${yr}</span>
-        <span style="color:var(--info)">${waterTotal.toFixed(0)} m³</span>
+        <span><span style="color:var(--info)">${waterTotal.toFixed(0)}</span> · <span style="color:var(--warn)">${waterSourceTotal.toFixed(0)}</span> m³</span>
       </div>
+      <div style="font-size:9px;color:var(--tx3);margin-top:3px">Used = at the tree · At source = including system losses (evap + leaks)</div>
     </div>`;
 
     h+=`<div class="acct-sect" style="border-top:2px solid var(--ok);margin-top:10px;padding-top:8px">
       <div style="font-size:11px;font-weight:700;color:var(--ok);margin-bottom:6px">🫒 YIELD PROJECTION — ${yr}</div>`;
     yieldRows.forEach(r=>{
       h+=`<div style="display:flex;justify-content:space-between;font-size:10px;padding:2px 0">
-        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} <span style="color:var(--tx3)">(${r.trees}t · ${r.bearing})</span></span>
+        <span style="color:var(--tx2)">${r.zone.type==='existing'?'🫒 ':''}${r.zone.label} <span style="color:var(--tx3)">(${r.trees}t · ${r.bearing}${r.zone.type==='existing'&&r.health<1?' · '+Math.round(r.health*100)+'%hp':''})</span></span>
         <span style="color:var(--ok)">${r.totalYield.toFixed(0)} kg fruit · ${r.totalOil.toFixed(0)} kg oil</span>
       </div>`;
     });
@@ -2913,56 +3047,95 @@ function buildWaterYieldRows(years, includeYield){
   if(!cropZones.length)return null;
   const startYear=2027;
   const rows=[];
-  // Header
+  // Header — for water, we add "at source" column per zone; for yield we don't
   const hdr=['Year'];
-  cropZones.forEach(z=>hdr.push(`${z.label} (${z.type})`));
-  hdr.push('Existing Zones Total','New Zones Total','Grand Total');
+  cropZones.forEach(z=>{
+    hdr.push(`${z.label} (${z.type})`);
+    if(!includeYield) hdr.push(`${z.label} at source`);
+  });
+  hdr.push('Existing Zones Total');
+  if(!includeYield) hdr.push('Existing at Source');
+  hdr.push('New Zones Total');
+  if(!includeYield) hdr.push('New at Source');
+  hdr.push('Grand Total');
+  if(!includeYield) hdr.push('Grand at Source');
   rows.push(hdr);
-  // Zone metadata row
+
+  // Metadata rows
   const metaRow=['Variety →'];
-  cropZones.forEach(z=>metaRow.push((OLIVE_VARIETIES[z.variety||'nabali']||{}).label||''));
-  metaRow.push('','','');
+  cropZones.forEach(z=>{
+    metaRow.push((OLIVE_VARIETIES[z.variety||'nabali']||{}).label||'');
+    if(!includeYield) metaRow.push('');
+  });
+  for(let k=0;k<(includeYield?3:6);k++) metaRow.push('');
   rows.push(metaRow);
+
   const treeRow=['Trees →'];
   cropZones.forEach(z=>{
     const a=polyArea(z.polygon);
     const t=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
     treeRow.push(t);
+    if(!includeYield) treeRow.push('');
   });
-  treeRow.push('','','');
+  for(let k=0;k<(includeYield?3:6);k++) treeRow.push('');
   rows.push(treeRow);
+
   const plantRow=['Plant year →'];
-  cropZones.forEach(z=>plantRow.push(z.plantYear||(z.type==='existing'?2007:2026)));
-  plantRow.push('','','');
+  cropZones.forEach(z=>{
+    plantRow.push(z.plantYear||(z.type==='existing'?2007:2026));
+    if(!includeYield) plantRow.push('');
+  });
+  for(let k=0;k<(includeYield?3:6);k++) plantRow.push('');
   rows.push(plantRow);
+
+  if(!includeYield){
+    const lossRow=['System loss % →'];
+    cropZones.forEach(z=>{
+      lossRow.push(z.lossPct??(z.type==='existing'?20:10));
+      lossRow.push('');
+    });
+    for(let k=0;k<6;k++) lossRow.push('');
+    rows.push(lossRow);
+  }
   rows.push([]);
 
   // Data rows
   for(let i=0;i<years;i++){
     const yr=startYear+i;
     const row=[yr];
-    let exTotal=0,nwTotal=0;
+    let exTotal=0,nwTotal=0,exSource=0,nwSource=0;
     cropZones.forEach(z=>{
       const a=polyArea(z.polygon);
       const trees=z._treeCount||Math.round(a/((z.rowSpacingM||7)*(z.treeSpacingM||7)));
       const variety=z.variety||'nabali';
       const plantYear=z.plantYear||(z.type==='existing'?2007:2026);
       const age=yr-plantYear;
-      let value;
       if(includeYield){
         const initState=z.type==='existing'?(z.bearingState||'up'):'up';
         const refYear=z.type==='existing'?startYear:2031;
         const bearing=bearingAtYear(refYear, initState, yr);
-        const per=treeYieldKg(variety, age, bearing);
-        value=per*trees;
+        const health=z.type==='existing'?(z.healthFactor??1.0):1.0;
+        const per=treeYieldKg(variety, age, bearing, health);
+        const value=per*trees;
+        row.push(value.toFixed(1));
+        if(z.type==='existing')exTotal+=value; else nwTotal+=value;
       } else {
         const per=treeWaterM3(variety, age);
-        value=per*trees;
+        const used=per*trees;
+        const lossPct=z.lossPct??(z.type==='existing'?20:10);
+        const source=waterWithLosses(used, lossPct);
+        row.push(used.toFixed(1));
+        row.push(source.toFixed(1));
+        if(z.type==='existing'){exTotal+=used; exSource+=source;}
+        else{nwTotal+=used; nwSource+=source;}
       }
-      row.push(value.toFixed(1));
-      if(z.type==='existing')exTotal+=value; else nwTotal+=value;
     });
-    row.push(exTotal.toFixed(1), nwTotal.toFixed(1), (exTotal+nwTotal).toFixed(1));
+    row.push(exTotal.toFixed(1));
+    if(!includeYield) row.push(exSource.toFixed(1));
+    row.push(nwTotal.toFixed(1));
+    if(!includeYield) row.push(nwSource.toFixed(1));
+    row.push((exTotal+nwTotal).toFixed(1));
+    if(!includeYield) row.push((exSource+nwSource).toFixed(1));
     rows.push(row);
   }
   return rows;
