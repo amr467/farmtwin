@@ -394,76 +394,84 @@ const PAR_DIST=50;       // metres for parallel detection
 const ZONE_COLS=['#4ade80','#60a5fa','#fb923c','#f472b6','#a78bfa','#34d399','#fbbf24'];
 const EXISTING_ZONE_COL='#84a173';
 
-// ── OLIVE VARIETY DATA (research-backed, Mafraq semi-arid conditions) ──
-// Values based on: Jordan Univ of Science & Tech (Nabali/Grossa), Mafraq deficit
-// irrigation studies (Nabali Baladi/Muhassan), Italian SHD trials (Arbequina,
-// Koroneiki, Arbosana, Frantoio), Spanish Picual production data.
+// ── OLIVE VARIETY DATA (multi-source triangulated) ──────────────────────
+// Water = supplementary drip irrigation only (assumes rainfall covers rest).
+// Yields = kg fruit/tree in UP year at maturity, at typical 6-7m spacing.
+// Down ratio = fraction of UP-year yield in DOWN year (variety-specific).
 //
-// Fields:
-//   waterM3         — mature annual water requirement (m³/tree/year)
-//   waterYoungM3    — annual water for 1-year-old newly planted tree (m³/tree/year)
-//                     — even young trees need water (1-2 m³) to establish
-//   yieldUpKg       — mature UP-year fruit yield (kg/tree)
-//   downRatio       — DOWN-year fruit yield as fraction of UP-year (0.2-0.8 by variety)
-//   oilPct          — oil weight / fruit weight (%)
-//   type            — Oil / Table / Dual
-//   note            — brief field note
+// Sources triangulated per variety:
+//   Nabali/Muhassan: Mafraq DI 2012-2016 (Ayoub); JUST 2014-2015 (semi-arid);
+//     ARTOLIO/ENI CBC Med Palestinian data; Palestine Wikipedia cultivars.
+//   Grossane: JUST semi-arid Jordan trials (Grossa de Spain).
+//   Coratina: World Catalogue Internacional del Aceite; Puglia data;
+//     University of California Sidebar SHD trial.
+//   Picual: Andalusia trials (Hidalgo et al.); "How many olives" review
+//     (Manzanilla data extrapolated); Spanish 200-tree/ha commercial baselines.
+//   Frantoio: Vivai Nannini Pescia; Olives Unlimited; LizPlants;
+//     One Green World (20+ lbs mature = 9+ kg conservative).
+//   Arbequina/Koroneiki: Cordoba deficit trials; Italian SHD (Coratina/Urano);
+//     Mas Montseny commercial data; "Comparing Koroneiki vs Arbequina".
+//
+// Down ratios per variety (biennial strength):
+//   0.30 = strong biennial (Nabali without irrigation)
+//   0.45-0.55 = moderate (Picual, Grossane, Coratina, Frantoio)
+//   0.70-0.75 = mild (Arbequina, Koroneiki under irrigation)
 const OLIVE_VARIETIES = {
   'nabali': {
     label:'Nabali (Baladi)', type:'Dual',
     waterM3: 5.5,  waterYoungM3: 1.0,
-    yieldUpKg: 50, downRatio: 0.30,   // strongly biennial in Jordan
-    oilPct: 20,
-    note:'Local Jordanian variety; strongly alternate-bearing without irrigation'
+    yieldUpKg: 45, downRatio: 0.30,
+    oilPct: 22,
+    note:'Local Jordanian/Palestinian; strong biennial. Oil 22-25% fresh weight'
   },
   'nabali_muhassan': {
     label:'Nabali Muhassan', type:'Dual',
     waterM3: 5.0,  waterYoungM3: 1.0,
-    yieldUpKg: 55, downRatio: 0.35,
-    oilPct: 22,
-    note:'Improved selection; better yield, slightly less alternate-bearing than Nabali'
+    yieldUpKg: 50, downRatio: 0.35,
+    oilPct: 24,
+    note:'Improved Jordanian selection; higher oil % than Baladi'
   },
   'grossane': {
-    label:'Grossane', type:'Table',
+    label:'Grossane (Grossa de Spain)', type:'Table',
     waterM3: 6.0,  waterYoungM3: 1.2,
     yieldUpKg: 40, downRatio: 0.45,
     oilPct: 18,
-    note:'French table variety; large fruits, higher water demand'
+    note:'French/Spanish table olive; larger fruits, moderate biennial'
   },
   'coratina': {
     label:'Coratina', type:'Oil',
     waterM3: 4.5,  waterYoungM3: 1.0,
-    yieldUpKg: 25, downRatio: 0.55,
-    oilPct: 25,
-    note:'Italian oil variety; high oil quality, moderate yield'
+    yieldUpKg: 30, downRatio: 0.55,
+    oilPct: 22,
+    note:'Italian oil; drought-tolerant, oil 20-23% (World Catalogue)'
   },
   'picual': {
     label:'Picual', type:'Oil',
     waterM3: 5.0,  waterYoungM3: 1.0,
-    yieldUpKg: 40, downRatio: 0.45,
-    oilPct: 24,
-    note:'Spanish oil variety; heavy producer, standard spacing'
+    yieldUpKg: 50, downRatio: 0.45,
+    oilPct: 22,
+    note:'Spanish oil; heavy producer, responds strongly to irrigation'
   },
   'arbequina': {
     label:'Arbequina', type:'Oil',
     waterM3: 3.0,  waterYoungM3: 0.8,
-    yieldUpKg: 12, downRatio: 0.75,    // SHD: alternate bearing much reduced by irrigation
+    yieldUpKg: 25, downRatio: 0.75,
     oilPct: 20,
-    note:'Spanish SHD variety; small fruits, high density (1000-1600 trees/ha)'
+    note:'Spanish SHD; irrigation reduces biennial. Halve values if SHD spacing'
   },
   'koroneiki': {
     label:'Koroneiki', type:'Oil',
     waterM3: 2.8,  waterYoungM3: 0.7,
-    yieldUpKg: 10, downRatio: 0.70,
+    yieldUpKg: 20, downRatio: 0.70,
     oilPct: 22,
-    note:'Greek SHD variety; drought-resistant, small fruits, high polyphenols'
+    note:'Greek SHD; drought-resistant, high polyphenols. Halve if SHD spacing'
   },
   'frantoio': {
     label:'Frantoio', type:'Oil',
     waterM3: 4.8,  waterYoungM3: 1.0,
-    yieldUpKg: 30, downRatio: 0.50,
-    oilPct: 22,
-    note:'Italian oil variety; balanced yield and quality'
+    yieldUpKg: 35, downRatio: 0.55,
+    oilPct: 21,
+    note:'Italian Tuscan classic; "high and constant" per Vivai Nannini'
   },
 };
 
